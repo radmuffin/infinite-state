@@ -3,16 +3,16 @@ import 'ui/studio_page.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  runApp(const AutomataStudioApp());
+  runApp(const InfiniteStateApp());
 }
 
-class AutomataStudioApp extends StatelessWidget {
-  const AutomataStudioApp({super.key});
+class InfiniteStateApp extends StatelessWidget {
+  const InfiniteStateApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Automata Studio',
+      title: 'Infinite State',
       debugShowCheckedModeBanner: false,
       themeMode: ThemeMode.dark,
       darkTheme: ThemeData.dark().copyWith(

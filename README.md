@@ -1,8 +1,8 @@
-# Automata Studio
+# Infinite State
 
 A high-performance visual state machine visualizer and simulator built with **Flutter & Dart**.
 
-Automata Studio provides an interactive node canvas for creating, manipulating, and simulating formal finite-state machines (DFAs, NFAs, and $\epsilon$-NFAs). It features real-time time-travel debugging, physical graph auto-layout algorithms, live transition tables, and a batch verification test runner.
+Infinite State provides an interactive node canvas for creating, manipulating, and simulating formal finite-state machines (DFAs, NFAs, and $\epsilon$-NFAs). It features real-time time-travel debugging, physical graph auto-layout algorithms, live transition tables, and a batch verification test runner.
 
 ---
 
@@ -45,7 +45,7 @@ Automata Studio provides an interactive node canvas for creating, manipulating, 
 
 ## Architecture
 
-Automata Studio is architected in distinct layers to scale from formal computer science automata to hierarchical software statecharts:
+Infinite State is architected in distinct layers to scale from formal computer science automata to hierarchical software statecharts:
 
 ```
 lib/

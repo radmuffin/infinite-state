@@ -1,7 +1,7 @@
-import 'package:automata_studio/core/engine/automata_simulator.dart';
-import 'package:automata_studio/core/layout/force_directed_layout.dart';
-import 'package:automata_studio/core/layout/sugiyama_layout.dart';
-import 'package:automata_studio/core/presets/example_automata.dart';
+import 'package:infinite_state/core/engine/automata_simulator.dart';
+import 'package:infinite_state/core/layout/force_directed_layout.dart';
+import 'package:infinite_state/core/layout/sugiyama_layout.dart';
+import 'package:infinite_state/core/presets/example_automata.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

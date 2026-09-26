@@ -44,7 +44,7 @@ class StudioToolbar extends StatelessWidget {
                     ),
                     alignment: Alignment.center,
                     child: const Text(
-                      'δ',
+                      '∞',
                       style: TextStyle(
                         color: Colors.white,
                         fontSize: 18,
@@ -54,7 +54,7 @@ class StudioToolbar extends StatelessWidget {
                   ),
                   const SizedBox(width: 10),
                   const Text(
-                    'Automata Studio',
+                    'Infinite State',
                     style: TextStyle(
                       color: Colors.white,
                       fontSize: 15,
