@@ -42,6 +42,7 @@ class StudioController extends ChangeNotifier {
   Timer? _playbackTimer;
   bool _isPlaying = false;
   final Duration _playbackSpeed = const Duration(milliseconds: 650);
+  int _centerViewTrigger = 0;
 
   // Undo stack
   final List<Automaton> _undoStack = [];
@@ -60,6 +61,12 @@ class StudioController extends ChangeNotifier {
   AutomataSimulator? get simulator => _simulator;
   bool get isPlaying => _isPlaying;
   Duration get playbackSpeed => _playbackSpeed;
+  int get centerViewTrigger => _centerViewTrigger;
+
+  void triggerCenterView() {
+    _centerViewTrigger++;
+    notifyListeners();
+  }
 
   StateNode? get selectedState =>
       _selectedStateId != null ? _automaton.states[_selectedStateId] : null;
@@ -242,6 +249,7 @@ class StudioController extends ChangeNotifier {
       }
     }
     _automaton = updated;
+    _centerViewTrigger++;
     notifyListeners();
   }
 
@@ -258,6 +266,7 @@ class StudioController extends ChangeNotifier {
       }
     }
     _automaton = updated;
+    _centerViewTrigger++;
     notifyListeners();
   }
 
@@ -269,6 +278,7 @@ class StudioController extends ChangeNotifier {
     _selectedStateId = null;
     _selectedTransitionId = null;
     _transitionPendingStartId = null;
+    _centerViewTrigger++;
     _initSimulator();
     notifyListeners();
   }

@@ -23,22 +23,22 @@ class ExampleAutomata {
   static AutomataPreset get binaryDivisibleBy3 {
     final q0 = const StateNode(
       id: 'q0',
-      label: 'q0 (rem 0)',
-      position: Offset(200, 300),
+      label: 'q0',
+      position: Offset(300, 350),
       isInitial: true,
       isAccept: true,
     );
     final q1 = const StateNode(
       id: 'q1',
-      label: 'q1 (rem 1)',
-      position: Offset(500, 180),
+      label: 'q1',
+      position: Offset(580, 220),
       isInitial: false,
       isAccept: false,
     );
     final q2 = const StateNode(
       id: 'q2',
-      label: 'q2 (rem 2)',
-      position: Offset(500, 420),
+      label: 'q2',
+      position: Offset(580, 480),
       isInitial: false,
       isAccept: false,
     );

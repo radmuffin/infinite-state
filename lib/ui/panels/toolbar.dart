@@ -295,6 +295,14 @@ class StudioToolbar extends StatelessWidget {
 
               const SizedBox(width: 8),
 
+              // Center View Button
+              IconButton(
+                icon: const Icon(Icons.center_focus_strong, size: 19),
+                tooltip: 'Center Graph on Screen',
+                color: const Color(0xFF94A3B8),
+                onPressed: controller.triggerCenterView,
+              ),
+
               // Undo Button
               IconButton(
                 icon: const Icon(Icons.undo, size: 19),

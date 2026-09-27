@@ -21,19 +21,45 @@ class _AutomataCanvasState extends State<AutomataCanvas> {
   String? _draggedNodeId;
   Offset? _cursorCanvasPos;
 
+  int _lastCenterViewTrigger = -1;
+
   @override
   void initState() {
     super.initState();
-    // Center the viewport initially
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final renderBox = context.findRenderObject() as RenderBox?;
-      if (renderBox != null) {
-        final viewSize = renderBox.size;
-        final dx = -(1500.0 - viewSize.width / 2);
-        final dy = -(1000.0 - viewSize.height / 2);
-        _transformController.value = Matrix4.translationValues(dx, dy, 0.0);
-      }
+      _centerViewOnGraph();
     });
+  }
+
+  void _centerViewOnGraph() {
+    final renderBox = context.findRenderObject() as RenderBox?;
+    if (renderBox == null || !renderBox.hasSize) return;
+
+    final viewSize = renderBox.size;
+    final states = widget.controller.automaton.states.values;
+
+    if (states.isEmpty) {
+      final dx = -(1500.0 - viewSize.width / 2);
+      final dy = -(1000.0 - viewSize.height / 2);
+      _transformController.value = Matrix4.translationValues(dx, dy, 0.0);
+      return;
+    }
+
+    double minX = double.infinity, minY = double.infinity;
+    double maxX = -double.infinity, maxY = -double.infinity;
+
+    for (final s in states) {
+      if (s.position.dx < minX) minX = s.position.dx;
+      if (s.position.dy < minY) minY = s.position.dy;
+      if (s.position.dx > maxX) maxX = s.position.dx;
+      if (s.position.dy > maxY) maxY = s.position.dy;
+    }
+
+    final centerOfGraph = Offset((minX + maxX) / 2, (minY + maxY) / 2);
+    final dx = -(centerOfGraph.dx - viewSize.width / 2);
+    final dy = -(centerOfGraph.dy - viewSize.height / 2);
+
+    _transformController.value = Matrix4.translationValues(dx, dy, 0.0);
   }
 
   Offset _toScene(Offset localPos) =>
@@ -109,6 +135,13 @@ class _AutomataCanvasState extends State<AutomataCanvas> {
     return ListenableBuilder(
       listenable: widget.controller,
       builder: (context, _) {
+        if (widget.controller.centerViewTrigger != _lastCenterViewTrigger) {
+          _lastCenterViewTrigger = widget.controller.centerViewTrigger;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _centerViewOnGraph();
+          });
+        }
+
         final isStuck =
             widget.controller.simulator?.currentStep.isStuck ?? false;
 
