@@ -3,18 +3,57 @@ import '../../state/studio_controller.dart';
 import 'batch_test_dialog.dart';
 import 'save_load_dialog.dart';
 
-class StudioToolbar extends StatelessWidget {
+class StudioToolbar extends StatefulWidget {
   final StudioController controller;
 
   const StudioToolbar({super.key, required this.controller});
 
   @override
+  State<StudioToolbar> createState() => _StudioToolbarState();
+}
+
+class _StudioToolbarState extends State<StudioToolbar> {
+  bool _isEditingName = false;
+  late final TextEditingController _nameController;
+  final FocusNode _nameFocusNode = FocusNode();
+
+  @override
+  void initState() {
+    super.initState();
+    _nameController = TextEditingController(text: widget.controller.machineName);
+    _nameFocusNode.addListener(() {
+      if (!_nameFocusNode.hasFocus && _isEditingName) {
+        _finishEditingName();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _nameFocusNode.dispose();
+    super.dispose();
+  }
+
+  void _finishEditingName() {
+    if (mounted) {
+      final text = _nameController.text.trim();
+      if (text.isNotEmpty) {
+        widget.controller.setMachineName(text);
+      }
+      setState(() {
+        _isEditingName = false;
+      });
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
-      listenable: controller,
+      listenable: widget.controller,
       builder: (context, _) {
-        final isDfa = controller.automaton.isDfa;
-        final hasEpsilon = controller.automaton.hasEpsilonTransitions;
+        final isDfa = widget.controller.automaton.isDfa;
+        final hasEpsilon = widget.controller.automaton.hasEpsilonTransitions;
 
         return Container(
           height: 52,
@@ -109,7 +148,7 @@ class StudioToolbar extends StatelessWidget {
                   onPressed: () {
                     showDialog(
                       context: context,
-                      builder: (ctx) => SaveLoadDialog(controller: controller),
+                      builder: (ctx) => SaveLoadDialog(controller: widget.controller),
                     );
                   },
                   icon: const Icon(Icons.folder_open, size: 16),
@@ -153,9 +192,9 @@ class StudioToolbar extends StatelessWidget {
                   ),
                   onSelected: (val) {
                     if (val == 'force') {
-                      controller.applyForceDirectedLayout();
+                      widget.controller.applyForceDirectedLayout();
                     } else if (val == 'sugiyama') {
-                      controller.applySugiyamaLayout();
+                      widget.controller.applySugiyamaLayout();
                     }
                   },
                   itemBuilder: (context) => [
@@ -223,7 +262,7 @@ class StudioToolbar extends StatelessWidget {
                     showDialog(
                       context: context,
                       builder: (ctx) =>
-                          BatchTestDialog(controller: controller),
+                          BatchTestDialog(controller: widget.controller),
                     );
                   },
                   icon: const Icon(Icons.playlist_add_check, size: 17),
@@ -247,7 +286,7 @@ class StudioToolbar extends StatelessWidget {
                   icon: const Icon(Icons.center_focus_strong, size: 19),
                   tooltip: 'Center Graph on Screen',
                   color: const Color(0xFF94A3B8),
-                  onPressed: controller.triggerCenterView,
+                  onPressed: widget.controller.triggerCenterView,
                 ),
 
                 // Undo Button
@@ -255,15 +294,52 @@ class StudioToolbar extends StatelessWidget {
                   icon: const Icon(Icons.undo, size: 19),
                   tooltip: 'Undo',
                   color: const Color(0xFF94A3B8),
-                  onPressed: controller.undo,
+                  onPressed: widget.controller.undo,
                 ),
 
-                // Clear All Button with Confirmation
-                IconButton(
-                  icon: const Icon(Icons.delete_sweep, size: 20),
+                // Clear All Button with Anchored Dropdown Menu
+                PopupMenuButton<String>(
                   tooltip: 'Clear All States',
-                  color: const Color(0xFFF87171),
-                  onPressed: () => _confirmClearAll(context),
+                  icon: const Icon(Icons.delete_sweep, size: 20, color: Color(0xFFF87171)),
+                  color: const Color(0xFF1E222D),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    side: const BorderSide(color: Color(0xFF334155)),
+                  ),
+                  onSelected: (val) {
+                    if (val == 'clear') {
+                      widget.controller.clearAutomaton();
+                    }
+                  },
+                  itemBuilder: (context) => [
+                    PopupMenuItem(
+                      enabled: false,
+                      height: 36,
+                      child: Text(
+                        'Clear all states & transitions?\n(You can undo anytime)',
+                        style: TextStyle(color: Colors.grey.shade400, fontSize: 11),
+                      ),
+                    ),
+                    const PopupMenuDivider(height: 1),
+                    const PopupMenuItem(
+                      value: 'clear',
+                      height: 36,
+                      child: Row(
+                        children: [
+                          Icon(Icons.delete_forever, size: 18, color: Color(0xFFEF4444)),
+                          SizedBox(width: 8),
+                          Text(
+                            'Clear Canvas',
+                            style: TextStyle(
+                              color: Color(0xFFEF4444),
+                              fontSize: 13,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -274,8 +350,42 @@ class StudioToolbar extends StatelessWidget {
   }
 
   Widget _buildMachineTitlePill(BuildContext context) {
+    if (_isEditingName) {
+      return Container(
+        width: 170,
+        height: 28,
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        decoration: BoxDecoration(
+          color: const Color(0xFF1E2333),
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: const Color(0xFF00E5FF), width: 1.5),
+        ),
+        alignment: Alignment.centerLeft,
+        child: TextField(
+          controller: _nameController,
+          focusNode: _nameFocusNode,
+          autofocus: true,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+          ),
+          decoration: const InputDecoration(
+            isDense: true,
+            contentPadding: EdgeInsets.zero,
+            border: InputBorder.none,
+          ),
+          onSubmitted: (_) => _finishEditingName(),
+        ),
+      );
+    }
+
     return InkWell(
-      onTap: () => _showRenameDialog(context),
+      onTap: () {
+        _nameController.text = widget.controller.machineName;
+        setState(() => _isEditingName = true);
+        _nameFocusNode.requestFocus();
+      },
       borderRadius: BorderRadius.circular(6),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -288,7 +398,7 @@ class StudioToolbar extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              controller.machineName,
+              widget.controller.machineName,
               style: const TextStyle(
                 color: Color(0xFFE2E8F0),
                 fontSize: 12,
@@ -299,95 +409,6 @@ class StudioToolbar extends StatelessWidget {
             const Icon(Icons.edit, size: 12, color: Color(0xFF64748B)),
           ],
         ),
-      ),
-    );
-  }
-
-  void _showRenameDialog(BuildContext context) {
-    final textController = TextEditingController(text: controller.machineName);
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF161922),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(10),
-          side: const BorderSide(color: Color(0xFF2A3246)),
-        ),
-        title: const Text('Rename Machine',
-            style: TextStyle(color: Colors.white, fontSize: 15)),
-        content: TextField(
-          controller: textController,
-          autofocus: true,
-          style: const TextStyle(color: Colors.white, fontSize: 14),
-          decoration: InputDecoration(
-            isDense: true,
-            filled: true,
-            fillColor: const Color(0xFF1E222D),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(6),
-              borderSide: const BorderSide(color: Color(0xFF334155)),
-            ),
-          ),
-          onSubmitted: (val) {
-            controller.setMachineName(val);
-            Navigator.of(ctx).pop();
-          },
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child:
-                const Text('Cancel', style: TextStyle(color: Color(0xFF94A3B8))),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              controller.setMachineName(textController.text);
-              Navigator.of(ctx).pop();
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF6366F1),
-              foregroundColor: Colors.white,
-            ),
-            child: const Text('Save'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _confirmClearAll(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF161922),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(10),
-          side: const BorderSide(color: Color(0xFF2A3246)),
-        ),
-        title: const Text('Clear All States?',
-            style: TextStyle(color: Colors.white, fontSize: 15)),
-        content: const Text(
-          'This will remove all states and transitions from the canvas. You can always use Undo to restore.',
-          style: TextStyle(color: Color(0xFF94A3B8), fontSize: 13),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child:
-                const Text('Cancel', style: TextStyle(color: Color(0xFF94A3B8))),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              controller.clearAutomaton();
-              Navigator.of(ctx).pop();
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFFDC2626),
-              foregroundColor: Colors.white,
-            ),
-            child: const Text('Clear All'),
-          ),
-        ],
       ),
     );
   }

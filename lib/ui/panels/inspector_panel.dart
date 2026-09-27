@@ -18,6 +18,11 @@ class _InspectorPanelState extends State<InspectorPanel> {
   String? _lastSelectedStateId;
   String? _lastSelectedTransitionId;
 
+  // Inline transition matrix cell editor state
+  String? _editingCellFromId;
+  String? _editingCellSymbol;
+  bool _isAddingSymbol = false;
+
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
@@ -305,12 +310,17 @@ class _InspectorPanelState extends State<InspectorPanel> {
             ),
             // Add Symbol Button
             IconButton(
-              icon: const Icon(Icons.add, size: 16),
-              tooltip: 'Add Symbol to Alphabet',
+              icon: Icon(_isAddingSymbol ? Icons.close : Icons.add, size: 16),
+              tooltip: _isAddingSymbol ? 'Cancel' : 'Add Symbol to Alphabet',
               color: const Color(0xFF00E5FF),
               padding: EdgeInsets.zero,
               constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
-              onPressed: _showAddSymbolDialog,
+              onPressed: () {
+                setState(() {
+                  _isAddingSymbol = !_isAddingSymbol;
+                  if (!_isAddingSymbol) _newSymbolController.clear();
+                });
+              },
             ),
             // Add State Button
             IconButton(
@@ -328,6 +338,58 @@ class _InspectorPanelState extends State<InspectorPanel> {
             ),
           ],
         ),
+
+        // Inline Add Symbol Field
+        if (_isAddingSymbol)
+          Container(
+            margin: const EdgeInsets.only(top: 8, bottom: 4),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: const Color(0xFF1E2433),
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: const Color(0xFF00E5FF), width: 1.2),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _newSymbolController,
+                    autofocus: true,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontFamily: 'monospace',
+                      fontSize: 13,
+                    ),
+                    decoration: const InputDecoration(
+                      hintText: 'Symbol (e.g. 0, 1, a, ε)',
+                      hintStyle:
+                          TextStyle(color: Color(0xFF64748B), fontSize: 12),
+                      isDense: true,
+                      contentPadding: EdgeInsets.symmetric(vertical: 4),
+                      border: InputBorder.none,
+                    ),
+                    onSubmitted: (_) => _submitNewSymbol(),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                ElevatedButton(
+                  onPressed: _submitNewSymbol,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF00E5FF),
+                    foregroundColor: const Color(0xFF0C0E14),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 4),
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  child: const Text('Add',
+                      style:
+                          TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                ),
+              ],
+            ),
+          ),
+
         const SizedBox(height: 4),
         const Text(
           'Click any cell to edit transition targets in real-time.',
@@ -444,32 +506,53 @@ class _InspectorPanelState extends State<InspectorPanel> {
                                 ? targetLabels.first
                                 : '{${targetLabels.join(", ")}}');
 
+                        final isEditingThisCell =
+                            _editingCellFromId == state.id &&
+                                _editingCellSymbol == sym;
+
                         return DataCell(
                           InkWell(
                             borderRadius: BorderRadius.circular(4),
-                            onTap: () => _showCellEditorDialog(
-                              sourceStateId: state.id,
-                              sourceStateLabel: state.label,
-                              symbol: sym,
-                              currentTargetIds: targets,
-                            ),
+                            onTap: () {
+                              setState(() {
+                                if (_editingCellFromId == state.id &&
+                                    _editingCellSymbol == sym) {
+                                  _editingCellFromId = null;
+                                  _editingCellSymbol = null;
+                                } else {
+                                  _editingCellFromId = state.id;
+                                  _editingCellSymbol = sym;
+                                }
+                              });
+                            },
                             child: Container(
                               padding: const EdgeInsets.symmetric(
                                   horizontal: 8, vertical: 4),
                               decoration: BoxDecoration(
-                                color: targets.isNotEmpty
-                                    ? const Color(0xFF242C3F)
-                                    : Colors.transparent,
+                                color: isEditingThisCell
+                                    ? const Color(0xFF0E7490)
+                                        .withValues(alpha: 0.45)
+                                    : (targets.isNotEmpty
+                                        ? const Color(0xFF242C3F)
+                                        : Colors.transparent),
                                 borderRadius: BorderRadius.circular(4),
+                                border: isEditingThisCell
+                                    ? Border.all(
+                                        color: const Color(0xFF00E5FF),
+                                        width: 1.2)
+                                    : null,
                               ),
                               child: Text(
                                 displayText,
                                 style: TextStyle(
-                                  color: targets.isNotEmpty
-                                      ? const Color(0xFF93C5FD)
-                                      : const Color(0xFF475569),
+                                  color: isEditingThisCell
+                                      ? const Color(0xFF00E5FF)
+                                      : (targets.isNotEmpty
+                                          ? const Color(0xFF93C5FD)
+                                          : const Color(0xFF475569)),
                                   fontSize: 11,
-                                  fontWeight: targets.isNotEmpty
+                                  fontWeight: isEditingThisCell ||
+                                          targets.isNotEmpty
                                       ? FontWeight.bold
                                       : FontWeight.normal,
                                   fontFamily: 'monospace',
@@ -485,164 +568,164 @@ class _InspectorPanelState extends State<InspectorPanel> {
               ),
             ),
           ),
+
+        // Inline Cell Editor Card (opens right beneath table when a cell is tapped)
+        _buildInlineCellEditor(),
       ],
     );
   }
 
-  void _showAddSymbolDialog() {
-    _newSymbolController.clear();
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF161922),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(10),
-          side: const BorderSide(color: Color(0xFF282D3D)),
-        ),
-        title: const Text('Add Symbol to Alphabet (Σ)',
-            style: TextStyle(color: Colors.white, fontSize: 15)),
-        content: TextField(
-          controller: _newSymbolController,
-          autofocus: true,
-          style: const TextStyle(
-              color: Colors.white, fontFamily: 'monospace', fontSize: 14),
-          decoration: InputDecoration(
-            hintText: 'e.g. 0, 1, a, b, or ε',
-            hintStyle: const TextStyle(color: Color(0xFF64748B), fontSize: 13),
-            filled: true,
-            fillColor: const Color(0xFF1E222D),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(6),
-              borderSide: const BorderSide(color: Color(0xFF334155)),
-            ),
-          ),
-          onSubmitted: (val) {
-            Navigator.of(ctx).pop();
-            widget.controller.addAlphabetSymbol(val);
-          },
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Cancel', style: TextStyle(color: Color(0xFF94A3B8))),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.of(ctx).pop();
-              widget.controller.addAlphabetSymbol(_newSymbolController.text);
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF6366F1),
-              foregroundColor: Colors.white,
-            ),
-            child: const Text('Add'),
+  void _submitNewSymbol() {
+    final sym = _newSymbolController.text.trim();
+    if (sym.isNotEmpty) {
+      widget.controller.addAlphabetSymbol(sym);
+      setState(() {
+        _isAddingSymbol = false;
+        _newSymbolController.clear();
+      });
+    }
+  }
+
+  Widget _buildInlineCellEditor() {
+    if (_editingCellFromId == null || _editingCellSymbol == null) {
+      return const SizedBox.shrink();
+    }
+    final automaton = widget.controller.automaton;
+    final fromState = automaton.states[_editingCellFromId];
+    if (fromState == null) return const SizedBox.shrink();
+
+    final currentTargets =
+        automaton.getTargets(_editingCellFromId!, _editingCellSymbol!);
+    final allStates = automaton.states.values.toList();
+
+    return Container(
+      margin: const EdgeInsets.only(top: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFF191E2B),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFF00E5FF), width: 1.2),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF00E5FF).withValues(alpha: 0.15),
+            blurRadius: 8,
           ),
         ],
       ),
-    );
-  }
-
-  void _showCellEditorDialog({
-    required String sourceStateId,
-    required String sourceStateLabel,
-    required String symbol,
-    required Set<String> currentTargetIds,
-  }) {
-    final allStates = widget.controller.automaton.states.values.toList();
-    final selectedTargets = Set<String>.from(currentTargetIds);
-
-    showDialog(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (context, setDialogState) {
-          return AlertDialog(
-            backgroundColor: const Color(0xFF161922),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-              side: const BorderSide(color: Color(0xFF2A3246)),
-            ),
-            title: Row(
-              children: [
-                const Icon(Icons.edit_note, color: Color(0xFF00E5FF), size: 20),
-                const SizedBox(width: 8),
-                Text(
-                  'Transition: δ($sourceStateLabel, "$symbol")',
-                  style: const TextStyle(color: Colors.white, fontSize: 15),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.edit_note, color: Color(0xFF00E5FF), size: 16),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  'δ(${fromState.label}, "$_editingCellSymbol") → Targets',
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12,
+                  ),
                 ),
-              ],
-            ),
-            content: SizedBox(
-              width: 300,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Select destination state(s):',
-                    style: TextStyle(color: Color(0xFF94A3B8), fontSize: 12),
-                  ),
-                  const SizedBox(height: 8),
-                  Container(
-                    constraints: const BoxConstraints(maxHeight: 220),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF1E222D),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: ListView(
-                      shrinkWrap: true,
-                      children: allStates.map((s) {
-                        final isTarget = selectedTargets.contains(s.id);
-                        return CheckboxListTile(
-                          dense: true,
-                          title: Text(
-                            s.label,
-                            style: const TextStyle(
-                                color: Colors.white, fontSize: 13),
-                          ),
-                          value: isTarget,
-                          activeColor: const Color(0xFF6366F1),
-                          onChanged: (val) {
-                            setDialogState(() {
-                              if (val == true) {
-                                selectedTargets.add(s.id);
-                              } else {
-                                selectedTargets.remove(s.id);
-                              }
-                            });
-                          },
-                        );
-                      }).toList(),
-                    ),
-                  ),
-                ],
               ),
-            ),
-            actions: [
+              // Clear All Targets
               TextButton(
                 onPressed: () {
-                  // Clear all transitions on this symbol
                   widget.controller.setMatrixCell(
-                      sourceStateId, symbol, {});
-                  Navigator.of(ctx).pop();
+                      _editingCellFromId!, _editingCellSymbol!, {});
                 },
-                child: const Text('Clear All',
-                    style: TextStyle(color: Color(0xFFF87171))),
-              ),
-              ElevatedButton(
-                onPressed: () {
-                  widget.controller.setMatrixCell(
-                      sourceStateId, symbol, selectedTargets);
-                  Navigator.of(ctx).pop();
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF6366F1),
-                  foregroundColor: Colors.white,
+                style: TextButton.styleFrom(
+                  foregroundColor: const Color(0xFFF87171),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 ),
-                child: const Text('Apply'),
+                child: const Text('Clear (∅)', style: TextStyle(fontSize: 11)),
+              ),
+              const SizedBox(width: 4),
+              IconButton(
+                icon:
+                    const Icon(Icons.close, size: 15, color: Color(0xFF94A3B8)),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
+                onPressed: () {
+                  setState(() {
+                    _editingCellFromId = null;
+                    _editingCellSymbol = null;
+                  });
+                },
               ),
             ],
-          );
-        },
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'Tap state chips to toggle destinations in real-time:',
+            style: TextStyle(color: Color(0xFF94A3B8), fontSize: 11),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: allStates.map((s) {
+              final isTarget = currentTargets.contains(s.id);
+              return InkWell(
+                onTap: () {
+                  final newTargets = Set<String>.from(currentTargets);
+                  if (isTarget) {
+                    newTargets.remove(s.id);
+                  } else {
+                    newTargets.add(s.id);
+                  }
+                  widget.controller.setMatrixCell(
+                      _editingCellFromId!, _editingCellSymbol!, newTargets);
+                },
+                borderRadius: BorderRadius.circular(16),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 150),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 10, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: isTarget
+                        ? const Color(0xFF0E7490)
+                        : const Color(0xFF13161F),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: isTarget
+                          ? const Color(0xFF00E5FF)
+                          : const Color(0xFF2A3246),
+                      width: 1.2,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (isTarget) ...[
+                        const Icon(Icons.check,
+                            size: 13, color: Color(0xFF00E5FF)),
+                        const SizedBox(width: 4),
+                      ],
+                      Text(
+                        s.label,
+                        style: TextStyle(
+                          color: isTarget
+                              ? Colors.white
+                              : const Color(0xFF94A3B8),
+                          fontWeight: isTarget
+                              ? FontWeight.bold
+                              : FontWeight.normal,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+        ],
       ),
     );
   }

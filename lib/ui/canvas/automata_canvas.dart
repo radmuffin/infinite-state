@@ -203,24 +203,25 @@ class _AutomataCanvasState extends State<AutomataCanvas> {
         final isConnecting = _connectingSourceId != null;
 
         return ClipRect(
-          child: GestureDetector(
-            onDoubleTapDown: _onDoubleTapDown,
-            child: MouseRegion(
-              cursor: _isDraggingWire || _isHoveringHandle
-                  ? SystemMouseCursors.precise
-                  : (isConnecting
-                      ? SystemMouseCursors.click
-                      : (_hoveredNodeId != null
-                          ? SystemMouseCursors.grab
-                          : SystemMouseCursors.basic)),
-              onHover: _onPointerHover,
-              child: Listener(
-                onPointerDown: _onPointerDown,
-                onPointerMove: _onPointerMove,
-                onPointerUp: _onPointerUp,
-                child: Stack(
-                  children: [
-                    InteractiveViewer(
+          child: MouseRegion(
+            cursor: _isDraggingWire || _isHoveringHandle
+                ? SystemMouseCursors.precise
+                : (isConnecting
+                    ? SystemMouseCursors.click
+                    : (_hoveredNodeId != null
+                        ? SystemMouseCursors.grab
+                        : SystemMouseCursors.basic)),
+            onHover: _onPointerHover,
+            child: Stack(
+              children: [
+                // 1. Canvas Layer with Pan/Zoom & Node drag listener
+                GestureDetector(
+                  onDoubleTapDown: _onDoubleTapDown,
+                  child: Listener(
+                    onPointerDown: _onPointerDown,
+                    onPointerMove: _onPointerMove,
+                    onPointerUp: _onPointerUp,
+                    child: InteractiveViewer(
                       transformationController: _transformController,
                       boundaryMargin: const EdgeInsets.all(double.infinity),
                       minScale: 0.2,
@@ -253,10 +254,12 @@ class _AutomataCanvasState extends State<AutomataCanvas> {
                         ),
                       ),
                     ),
+                  ),
+                ),
 
-                    // Floating Quick-Action Pill for selected state
-                    if (selectedState != null && !_isDraggingWire && !isConnecting)
-                      _buildSelectedStateQuickActions(selectedState),
+                // 2. Floating Quick-Action Pill for selected state (on top of canvas)
+                if (selectedState != null && !_isDraggingWire && !isConnecting)
+                  _buildSelectedStateQuickActions(selectedState),
 
                     // Connect Mode Banner
                     if (isConnecting)
@@ -327,12 +330,10 @@ class _AutomataCanvasState extends State<AutomataCanvas> {
                   ],
                 ),
               ),
-            ),
-          ),
+            );
+          },
         );
-      },
-    );
-  }
+      }
 
   Widget _buildSelectedStateQuickActions(StateNode node) {
     // Convert scene coordinates to local widget coordinates
@@ -343,23 +344,20 @@ class _AutomataCanvasState extends State<AutomataCanvas> {
     return Positioned(
       left: screenPos.dx - 120,
       top: screenPos.dy,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-        decoration: BoxDecoration(
-          color: const Color(0xFF1E2333),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: const Color(0xFF3B445B), width: 1.2),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.45),
-              blurRadius: 10,
-              offset: const Offset(0, 3),
-            ),
-          ],
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
+      child: Material(
+        color: const Color(0xFF1E2333),
+        borderRadius: BorderRadius.circular(20),
+        elevation: 8,
+        shadowColor: Colors.black.withValues(alpha: 0.5),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: const Color(0xFF3B445B), width: 1.2),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
             // Connect Button
             InkWell(
               onTap: () {
@@ -489,8 +487,9 @@ class _AutomataCanvasState extends State<AutomataCanvas> {
           ],
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 
   @override
   void dispose() {
