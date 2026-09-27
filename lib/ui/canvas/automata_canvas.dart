@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../core/models/state_node.dart';
 import '../../state/studio_controller.dart';
 import 'canvas_painter.dart';
@@ -20,7 +21,9 @@ class _AutomataCanvasState extends State<AutomataCanvas> {
 
   String? _draggedNodeId;
   String? _hoveredNodeId;
+  bool _isHoveringHandle = false;
   bool _isDraggingWire = false;
+  String? _connectingSourceId;
 
   int _lastCenterViewTrigger = -1;
 
@@ -66,9 +69,10 @@ class _AutomataCanvasState extends State<AutomataCanvas> {
   Offset _toScene(Offset localPos) =>
       _transformController.toScene(localPos);
 
-  StateNode? _hitTestNode(Offset scenePos) {
+  StateNode? _hitTestNode(Offset scenePos, {double extraRadius = 6.0}) {
     for (final node in widget.controller.automaton.states.values) {
-      if ((node.position - scenePos).distance <= TransitionGeometry.nodeRadius + 4.0) {
+      if ((node.position - scenePos).distance <=
+          TransitionGeometry.nodeRadius + extraRadius) {
         return node;
       }
     }
@@ -76,40 +80,77 @@ class _AutomataCanvasState extends State<AutomataCanvas> {
   }
 
   bool _hitTestConnectionHandle(StateNode node, Offset scenePos) {
-    final handlePos = node.position + const Offset(TransitionGeometry.nodeRadius + 8.0, 0);
-    return (handlePos - scenePos).distance <= 12.0;
+    final handlePos =
+        node.position + const Offset(TransitionGeometry.nodeRadius + 14.0, 0);
+    return (handlePos - scenePos).distance <= 22.0;
   }
 
   void _onPointerDown(PointerDownEvent event) {
     final scenePos = _toScene(event.localPosition);
-    final clickedNode = _hitTestNode(scenePos);
 
-    if (clickedNode != null) {
-      final selected = widget.controller.selectedState;
-      // Check if clicking on connection handle of selected state
-      if (selected != null &&
-          selected.id == clickedNode.id &&
-          _hitTestConnectionHandle(clickedNode, scenePos)) {
-        _isDraggingWire = true;
-        widget.controller.startWireDrag(clickedNode.id, scenePos);
-      } else {
-        widget.controller.selectState(clickedNode.id);
-        _draggedNodeId = clickedNode.id;
+    // 1. If currently in click-to-connect mode:
+    if (_connectingSourceId != null) {
+      final targetNode = _hitTestNode(scenePos, extraRadius: 10.0);
+      if (targetNode != null) {
+        widget.controller.connectStates(_connectingSourceId!, targetNode.id);
       }
+      setState(() {
+        _connectingSourceId = null;
+        _isDraggingWire = false;
+      });
+      return;
+    }
+
+    // 2. Check if clicking connection handle of selected state FIRST
+    final selected = widget.controller.selectedState;
+    if (selected != null && _hitTestConnectionHandle(selected, scenePos)) {
+      _isDraggingWire = true;
+      _draggedNodeId = null;
+      widget.controller.startWireDrag(selected.id, scenePos);
+      setState(() {});
+      return;
+    }
+
+    // 3. Check if clicking a state node
+    final clickedNode = _hitTestNode(scenePos);
+    if (clickedNode != null) {
+      // Shift-click/drag immediately starts connection wire
+      if (HardwareKeyboard.instance.isShiftPressed) {
+        _isDraggingWire = true;
+        _draggedNodeId = null;
+        widget.controller.startWireDrag(clickedNode.id, scenePos);
+        setState(() {});
+        return;
+      }
+
+      widget.controller.selectState(clickedNode.id);
+      _draggedNodeId = clickedNode.id;
     } else {
+      // 4. Clicked canvas background -> deselect
       widget.controller.selectState(null);
+      widget.controller.selectTransition(null);
     }
     setState(() {});
   }
 
+  void _updateHover(Offset scenePos) {
+    final hoveredNode = _hitTestNode(scenePos);
+    final selected = widget.controller.selectedState;
+    final hoveredHandle =
+        selected != null && _hitTestConnectionHandle(selected, scenePos);
+
+    if (_hoveredNodeId != hoveredNode?.id ||
+        _isHoveringHandle != hoveredHandle) {
+      setState(() {
+        _hoveredNodeId = hoveredNode?.id;
+        _isHoveringHandle = hoveredHandle;
+      });
+    }
+  }
+
   void _onPointerMove(PointerMoveEvent event) {
     final scenePos = _toScene(event.localPosition);
-
-    // Update hover
-    final hovered = _hitTestNode(scenePos);
-    if (_hoveredNodeId != hovered?.id) {
-      setState(() => _hoveredNodeId = hovered?.id);
-    }
+    _updateHover(scenePos);
 
     if (_isDraggingWire) {
       widget.controller.updateWireDrag(scenePos);
@@ -118,14 +159,20 @@ class _AutomataCanvasState extends State<AutomataCanvas> {
     }
   }
 
+  void _onPointerHover(PointerHoverEvent event) {
+    final scenePos = _toScene(event.localPosition);
+    _updateHover(scenePos);
+  }
+
   void _onPointerUp(PointerUpEvent event) {
     if (_isDraggingWire) {
       final scenePos = _toScene(event.localPosition);
-      final targetNode = _hitTestNode(scenePos);
+      final targetNode = _hitTestNode(scenePos, extraRadius: 10.0);
       widget.controller.endWireDrag(targetNode?.id);
       _isDraggingWire = false;
     }
     _draggedNodeId = null;
+    setState(() {});
   }
 
   void _onDoubleTapDown(TapDownDetails details) {
@@ -153,48 +200,132 @@ class _AutomataCanvasState extends State<AutomataCanvas> {
             widget.controller.simulator?.currentStep.isStuck ?? false;
         final selectedState = widget.controller.selectedState;
 
+        final isConnecting = _connectingSourceId != null;
+
         return ClipRect(
           child: GestureDetector(
             onDoubleTapDown: _onDoubleTapDown,
-            child: Listener(
-              onPointerDown: _onPointerDown,
-              onPointerMove: _onPointerMove,
-              onPointerUp: _onPointerUp,
-              child: Stack(
-                children: [
-                  InteractiveViewer(
-                    transformationController: _transformController,
-                    boundaryMargin: const EdgeInsets.all(double.infinity),
-                    minScale: 0.2,
-                    maxScale: 2.5,
-                    panEnabled: _draggedNodeId == null && !_isDraggingWire,
-                    child: SizedBox(
-                      width: _canvasVirtualSize.width,
-                      height: _canvasVirtualSize.height,
-                      child: CustomPaint(
-                        painter: CanvasPainter(
-                          automaton: widget.controller.automaton,
-                          selectedStateId: widget.controller.selectedStateId,
-                          selectedTransitionId:
-                              widget.controller.selectedTransitionId,
-                          wireSourceStateId:
-                              widget.controller.wireSourceStateId,
-                          wireCurrentPosition:
-                              widget.controller.wireCurrentPosition,
-                          hoveredStateId: _hoveredNodeId,
-                          activeStateIds: widget.controller.activeStateIds,
-                          activeTransitionIds:
-                              widget.controller.activeTransitionIds,
-                          isSimulationStuck: isStuck,
+            child: MouseRegion(
+              cursor: _isDraggingWire || _isHoveringHandle
+                  ? SystemMouseCursors.precise
+                  : (isConnecting
+                      ? SystemMouseCursors.click
+                      : (_hoveredNodeId != null
+                          ? SystemMouseCursors.grab
+                          : SystemMouseCursors.basic)),
+              onHover: _onPointerHover,
+              child: Listener(
+                onPointerDown: _onPointerDown,
+                onPointerMove: _onPointerMove,
+                onPointerUp: _onPointerUp,
+                child: Stack(
+                  children: [
+                    InteractiveViewer(
+                      transformationController: _transformController,
+                      boundaryMargin: const EdgeInsets.all(double.infinity),
+                      minScale: 0.2,
+                      maxScale: 2.5,
+                      panEnabled: _draggedNodeId == null &&
+                          !_isDraggingWire &&
+                          !isConnecting &&
+                          _hoveredNodeId == null &&
+                          !_isHoveringHandle,
+                      child: SizedBox(
+                        width: _canvasVirtualSize.width,
+                        height: _canvasVirtualSize.height,
+                        child: CustomPaint(
+                          painter: CanvasPainter(
+                            automaton: widget.controller.automaton,
+                            selectedStateId: widget.controller.selectedStateId,
+                            selectedTransitionId:
+                                widget.controller.selectedTransitionId,
+                            wireSourceStateId:
+                                widget.controller.wireSourceStateId,
+                            wireCurrentPosition:
+                                widget.controller.wireCurrentPosition,
+                            hoveredStateId: _hoveredNodeId,
+                            isHoveringHandle: _isHoveringHandle,
+                            activeStateIds: widget.controller.activeStateIds,
+                            activeTransitionIds:
+                                widget.controller.activeTransitionIds,
+                            isSimulationStuck: isStuck,
+                          ),
                         ),
                       ),
                     ),
-                  ),
 
-                  // Floating Quick-Action Pill for selected state
-                  if (selectedState != null && !_isDraggingWire)
-                    _buildSelectedStateQuickActions(selectedState),
-                ],
+                    // Floating Quick-Action Pill for selected state
+                    if (selectedState != null && !_isDraggingWire && !isConnecting)
+                      _buildSelectedStateQuickActions(selectedState),
+
+                    // Connect Mode Banner
+                    if (isConnecting)
+                      Positioned(
+                        top: 16,
+                        left: 0,
+                        right: 0,
+                        child: Center(
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 16, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF1E2333),
+                              borderRadius: BorderRadius.circular(24),
+                              border: Border.all(
+                                  color: const Color(0xFF00E5FF), width: 1.5),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: const Color(0xFF00E5FF)
+                                      .withValues(alpha: 0.25),
+                                  blurRadius: 16,
+                                ),
+                              ],
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.cable,
+                                    size: 16, color: Color(0xFF00E5FF)),
+                                const SizedBox(width: 8),
+                                Text(
+                                  'Connecting from ${widget.controller.automaton.states[_connectingSourceId]?.label ?? _connectingSourceId} → Click target state (or click self for loop)',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                InkWell(
+                                  onTap: () {
+                                    setState(() {
+                                      _connectingSourceId = null;
+                                      widget.controller.endWireDrag(null);
+                                    });
+                                  },
+                                  borderRadius: BorderRadius.circular(12),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 8, vertical: 3),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFF334155),
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: const Text(
+                                      'Cancel',
+                                      style: TextStyle(
+                                          color: Color(0xFFCBD5E1),
+                                          fontSize: 11),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -210,7 +341,7 @@ class _AutomataCanvasState extends State<AutomataCanvas> {
     final screenPos = MatrixUtils.transformPoint(matrix, scenePos);
 
     return Positioned(
-      left: screenPos.dx - 80,
+      left: screenPos.dx - 120,
       top: screenPos.dy,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
@@ -229,6 +360,45 @@ class _AutomataCanvasState extends State<AutomataCanvas> {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
+            // Connect Button
+            InkWell(
+              onTap: () {
+                setState(() {
+                  _connectingSourceId = node.id;
+                  widget.controller.startWireDrag(node.id, node.position);
+                });
+              },
+              borderRadius: BorderRadius.circular(12),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                decoration: BoxDecoration(
+                  color: _connectingSourceId == node.id
+                      ? const Color(0xFF0E7490)
+                      : Colors.transparent,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.cable,
+                      size: 13,
+                      color: Color(0xFF00E5FF),
+                    ),
+                    SizedBox(width: 3),
+                    Text(
+                      'Connect',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF00E5FF),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(width: 4),
             // Toggle Start
             InkWell(
               onTap: () => widget.controller.quickToggleInitial(node.id),

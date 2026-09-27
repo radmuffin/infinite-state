@@ -21,10 +21,13 @@ class CanvasPainter extends CustomPainter {
     this.wireSourceStateId,
     this.wireCurrentPosition,
     this.hoveredStateId,
+    this.isHoveringHandle = false,
     required this.activeStateIds,
     required this.activeTransitionIds,
     this.isSimulationStuck = false,
   });
+
+  final bool isHoveringHandle;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -322,23 +325,35 @@ class CanvasPainter extends CustomPainter {
         ),
       );
 
-      // 8. Quick Connection Handle Dot when selected
+      // 8. Quick Connection Handle when selected
       if (isSelected && wireSourceStateId == null) {
-        final handlePos = node.position + const Offset(TransitionGeometry.nodeRadius + 8.0, 0);
-        // Handle glow
+        final handlePos = node.position + const Offset(TransitionGeometry.nodeRadius + 14.0, 0);
+        final radius = isHoveringHandle ? 11.0 : 9.0;
+        final glowRadius = isHoveringHandle ? 18.0 : 14.0;
+
+        // Outer cyan glow
         canvas.drawCircle(
           handlePos,
-          7.0,
+          glowRadius,
           Paint()
-            ..color = const Color(0x666366F1)
-            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4.0),
+            ..color = const Color(0x6600E5FF)
+            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6.0),
         );
-        // Handle dot
+
+        // Circular handle button
         canvas.drawCircle(
           handlePos,
-          4.5,
-          Paint()..color = const Color(0xFF818CF8),
+          radius,
+          Paint()..color = isHoveringHandle ? const Color(0xFF67E8F9) : const Color(0xFF00E5FF),
         );
+
+        // Inner plus icon
+        final plusPaint = Paint()
+          ..color = const Color(0xFF0C0E14)
+          ..strokeWidth = 2.0
+          ..strokeCap = StrokeCap.round;
+        canvas.drawLine(handlePos - const Offset(4, 0), handlePos + const Offset(4, 0), plusPaint);
+        canvas.drawLine(handlePos - const Offset(0, 4), handlePos + const Offset(0, 4), plusPaint);
       }
     }
   }
