@@ -51,6 +51,12 @@ class Automaton {
   List<Transition> transitionsBetween(String fromId, String toId) =>
       transitions.where((t) => t.fromId == fromId && t.toId == toId).toList();
 
+  /// Target state IDs reachable from [fromId] on reading [symbol].
+  Set<String> getTargets(String fromId, String symbol) => transitionsFrom(fromId)
+      .where((t) => t.symbols.contains(symbol))
+      .map((t) => t.toId)
+      .toSet();
+
   /// Whether the automaton has any epsilon transitions.
   bool get hasEpsilonTransitions =>
       transitions.any((t) => t.symbols.contains(Transition.epsilon));

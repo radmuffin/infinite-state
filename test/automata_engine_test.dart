@@ -1,7 +1,9 @@
 import 'package:infinite_state/core/engine/automata_simulator.dart';
 import 'package:infinite_state/core/layout/force_directed_layout.dart';
 import 'package:infinite_state/core/layout/sugiyama_layout.dart';
+import 'package:infinite_state/core/models/automaton.dart';
 import 'package:infinite_state/core/presets/example_automata.dart';
+import 'package:infinite_state/state/studio_controller.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -144,6 +146,43 @@ void main() {
         expect(positions[state.id]!.dx.isFinite, isTrue);
         expect(positions[state.id]!.dy.isFinite, isTrue);
       }
+    });
+
+    test('StudioController setMatrixCell dynamically modifies transition graph', () {
+      final automaton = ExampleAutomata.binaryDivisibleBy3.automaton;
+      final controller = StudioController(initialAutomaton: automaton);
+
+      // Initially q0 on '0' goes to q0.
+      expect(controller.automaton.getTargets('q0', '0'), {'q0'});
+
+      // Change q0 on '0' to transition to q1 instead
+      controller.setMatrixCell('q0', '0', {'q1'});
+      expect(controller.automaton.getTargets('q0', '0'), {'q1'});
+
+      // Change q0 on '0' to transition to both q1 and q2 (NFA branching)
+      controller.setMatrixCell('q0', '0', {'q1', 'q2'});
+      final targets = controller.automaton.getTargets('q0', '0');
+      expect(targets.contains('q1'), isTrue);
+      expect(targets.contains('q2'), isTrue);
+      expect(controller.automaton.isDfa, isFalse);
+
+      // Clear transition from q0 on '0'
+      controller.setMatrixCell('q0', '0', {});
+      expect(controller.automaton.getTargets('q0', '0'), isEmpty);
+
+      controller.dispose();
+    });
+
+    test('Automaton serialization round-trip maintains graph fidelity', () {
+      final original = ExampleAutomata.binaryDivisibleBy3.automaton;
+      final json = original.toJson();
+      final restored = Automaton.fromJson(json);
+
+      expect(restored.states.length, equals(original.states.length));
+      expect(restored.transitions.length, equals(original.transitions.length));
+      expect(restored.initialState?.id, equals(original.initialState?.id));
+      expect(restored.acceptStateIds, equals(original.acceptStateIds));
+      expect(restored.alphabet, equals(original.alphabet));
     });
   });
 }

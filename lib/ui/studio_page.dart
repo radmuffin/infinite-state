@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../state/studio_controller.dart';
 import 'canvas/automata_canvas.dart';
+import 'canvas/canvas_hud.dart';
 import 'panels/inspector_panel.dart';
 import 'panels/simulation_bar.dart';
 import 'panels/toolbar.dart';
@@ -37,7 +38,6 @@ class _StudioPageState extends State<StudioPage> {
       } else if (event.logicalKey == LogicalKeyboardKey.escape) {
         _controller.selectState(null);
         _controller.selectTransition(null);
-        _controller.cancelPendingTransition();
       }
     }
   }
@@ -49,7 +49,7 @@ class _StudioPageState extends State<StudioPage> {
       autofocus: true,
       onKeyEvent: _handleKeyEvent,
       child: Scaffold(
-        backgroundColor: const Color(0xFF0F1117),
+        backgroundColor: const Color(0xFF0C0E14),
         body: SafeArea(
           child: Column(
             children: [
@@ -60,9 +60,16 @@ class _StudioPageState extends State<StudioPage> {
               Expanded(
                 child: Row(
                   children: [
-                    // Visual Canvas
+                    // Visual Canvas with Floating HUD
                     Expanded(
-                      child: AutomataCanvas(controller: _controller),
+                      child: Stack(
+                        children: [
+                          Positioned.fill(
+                            child: AutomataCanvas(controller: _controller),
+                          ),
+                          CanvasHud(controller: _controller),
+                        ],
+                      ),
                     ),
 
                     // Inspector & Transition Matrix Sidebar
