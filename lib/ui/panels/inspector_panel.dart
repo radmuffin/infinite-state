@@ -163,31 +163,37 @@ class _InspectorPanelState extends State<InspectorPanel> {
         const SizedBox(height: 12),
 
         // Toggles
-        SwitchListTile(
-          contentPadding: EdgeInsets.zero,
-          title: const Text('Initial State (q₀)',
-              style: TextStyle(color: Colors.white, fontSize: 12)),
-          value: selectedState.isInitial,
-          activeThumbColor: const Color(0xFF6366F1),
-          onChanged: (val) {
-            widget.controller.updateStateProperties(
-              id: selectedState.id,
-              isInitial: val,
-            );
-          },
+        Material(
+          color: Colors.transparent,
+          child: SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Initial State (q₀)',
+                style: TextStyle(color: Colors.white, fontSize: 12)),
+            value: selectedState.isInitial,
+            activeThumbColor: const Color(0xFF6366F1),
+            onChanged: (val) {
+              widget.controller.updateStateProperties(
+                id: selectedState.id,
+                isInitial: val,
+              );
+            },
+          ),
         ),
-        SwitchListTile(
-          contentPadding: EdgeInsets.zero,
-          title: const Text('Accepting State (F)',
-              style: TextStyle(color: Colors.white, fontSize: 12)),
-          value: selectedState.isAccept,
-          activeThumbColor: const Color(0xFF10B981),
-          onChanged: (val) {
-            widget.controller.updateStateProperties(
-              id: selectedState.id,
-              isAccept: val,
-            );
-          },
+        Material(
+          color: Colors.transparent,
+          child: SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Accepting State (F)',
+                style: TextStyle(color: Colors.white, fontSize: 12)),
+            value: selectedState.isAccept,
+            activeThumbColor: const Color(0xFF10B981),
+            onChanged: (val) {
+              widget.controller.updateStateProperties(
+                id: selectedState.id,
+                isAccept: val,
+              );
+            },
+          ),
         ),
 
         const SizedBox(height: 10),
