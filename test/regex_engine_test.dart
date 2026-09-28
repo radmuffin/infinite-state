@@ -109,7 +109,7 @@ void main() {
 
   group("Thompson's Construction (Regex -> NFA) Tests", () {
     test('Builds NFA for literal', () {
-      final nfa = RegexService.regexToAutomaton('a');
+      final nfa = RegexService.regexToAutomaton('a', mode: RegexCompileMode.thompsonNfa);
       expect(nfa.states.length, equals(2));
       expect(nfa.transitions.length, equals(1));
       expect(nfa.initialState, isNotNull);
@@ -121,7 +121,7 @@ void main() {
     });
 
     test('Builds NFA for (a|b)*abb textbook pattern', () {
-      final nfa = RegexService.regexToAutomaton('(a|b)*abb');
+      final nfa = RegexService.regexToAutomaton('(a|b)*abb', mode: RegexCompileMode.thompsonNfa);
       expect(nfa.hasEpsilonTransitions, isTrue);
 
       // Matches
@@ -139,7 +139,7 @@ void main() {
     });
 
     test('Builds NFA for positive closure (01|10)+', () {
-      final nfa = RegexService.regexToAutomaton('(01|10)+');
+      final nfa = RegexService.regexToAutomaton('(01|10)+', mode: RegexCompileMode.thompsonNfa);
 
       expect(AutomataSimulator.run(automaton: nfa, inputTape: '01').isStringAccepted, isTrue);
       expect(AutomataSimulator.run(automaton: nfa, inputTape: '10').isStringAccepted, isTrue);
