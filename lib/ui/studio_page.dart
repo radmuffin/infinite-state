@@ -24,20 +24,67 @@ class _StudioPageState extends State<StudioPage> {
     _controller = StudioController();
   }
 
+  bool _isPrintableSymbol(String char) {
+    if (char.isEmpty) return false;
+    if (char == 'ε') return true;
+    final code = char.codeUnitAt(0);
+    return char.length == 1 && code >= 33 && code <= 126;
+  }
+
   void _handleKeyEvent(KeyEvent event) {
     if (event is KeyDownEvent) {
+      // Don't intercept keystrokes if the user is typing in a text field
+      final primaryFocus = FocusManager.instance.primaryFocus;
+      if (primaryFocus != null && primaryFocus.context?.widget is EditableText) {
+        return;
+      }
+
+      // Modifier key combinations (Ctrl/Meta/Alt) are reserved for system shortcuts
+      if (HardwareKeyboard.instance.isControlPressed ||
+          HardwareKeyboard.instance.isMetaPressed ||
+          HardwareKeyboard.instance.isAltPressed) {
+        return;
+      }
+
       if (event.logicalKey == LogicalKeyboardKey.space) {
+        if (_controller.hasActiveOrSelectedTransition &&
+            (_controller.isAwaitingCommaAppend || _controller.transitionTypingActive)) {
+          // Allow typing "a, b" smoothly without space toggling playback
+          return;
+        }
         _controller.togglePlayPause();
+      } else if (event.logicalKey == LogicalKeyboardKey.enter ||
+          event.logicalKey == LogicalKeyboardKey.numpadEnter) {
+        if (_controller.transitionTypingActive) {
+          _controller.finishTransitionTyping();
+          return;
+        }
       } else if (event.logicalKey == LogicalKeyboardKey.arrowRight) {
         _controller.stepForward();
       } else if (event.logicalKey == LogicalKeyboardKey.arrowLeft) {
         _controller.stepBackward();
-      } else if (event.logicalKey == LogicalKeyboardKey.delete ||
-          event.logicalKey == LogicalKeyboardKey.backspace) {
+      } else if (event.logicalKey == LogicalKeyboardKey.backspace) {
+        if (_controller.transitionTypingActive) {
+          if (_controller.canBackspaceTransitionSymbol) {
+            _controller.backspaceTransitionSymbol();
+            return;
+          } else {
+            _controller.finishTransitionTyping();
+            return;
+          }
+        }
+        _controller.deleteSelected();
+      } else if (event.logicalKey == LogicalKeyboardKey.delete) {
         _controller.deleteSelected();
       } else if (event.logicalKey == LogicalKeyboardKey.escape) {
         _controller.selectState(null);
         _controller.selectTransition(null);
+        _controller.finishTransitionTyping();
+      } else if (event.character != null && event.character!.isNotEmpty) {
+        final char = event.character!;
+        if (_controller.hasActiveOrSelectedTransition && _isPrintableSymbol(char)) {
+          _controller.typeTransitionSymbol(char);
+        }
       }
     }
   }

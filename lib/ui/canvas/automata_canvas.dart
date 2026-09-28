@@ -26,6 +26,9 @@ class _AutomataCanvasState extends State<AutomataCanvas> {
   bool _isHoveringHandle = false;
   bool _isDraggingWire = false;
   String? _connectingSourceId;
+  String? _wireSourceId;
+  Offset? _wireStartPos;
+  bool _wireDragMoved = false;
 
   int _lastCenterViewTrigger = -1;
 
@@ -120,10 +123,16 @@ class _AutomataCanvasState extends State<AutomataCanvas> {
       final targetNode = _hitTestNode(scenePos, extraRadius: 10.0);
       if (targetNode != null) {
         widget.controller.connectStates(_connectingSourceId!, targetNode.id);
+      } else {
+        // Clicked canvas background -> auto add connected node at clicked scene position
+        widget.controller.autoAddConnectedNode(_connectingSourceId!, position: scenePos);
       }
       setState(() {
         _connectingSourceId = null;
         _isDraggingWire = false;
+        _wireSourceId = null;
+        _wireStartPos = null;
+        _wireDragMoved = false;
       });
       return;
     }
@@ -133,6 +142,9 @@ class _AutomataCanvasState extends State<AutomataCanvas> {
     if (selected != null && _hitTestConnectionHandle(selected, scenePos)) {
       _isDraggingWire = true;
       _draggedNodeId = null;
+      _wireSourceId = selected.id;
+      _wireStartPos = scenePos;
+      _wireDragMoved = false;
       widget.controller.startWireDrag(selected.id, scenePos);
       setState(() {});
       return;
@@ -145,6 +157,9 @@ class _AutomataCanvasState extends State<AutomataCanvas> {
       if (HardwareKeyboard.instance.isShiftPressed) {
         _isDraggingWire = true;
         _draggedNodeId = null;
+        _wireSourceId = clickedNode.id;
+        _wireStartPos = scenePos;
+        _wireDragMoved = false;
         widget.controller.startWireDrag(clickedNode.id, scenePos);
         setState(() {});
         return;
@@ -190,6 +205,10 @@ class _AutomataCanvasState extends State<AutomataCanvas> {
     _updateHover(scenePos);
 
     if (_isDraggingWire) {
+      if (_wireStartPos != null &&
+          (scenePos - _wireStartPos!).distance > 12.0) {
+        _wireDragMoved = true;
+      }
       widget.controller.updateWireDrag(scenePos);
     } else if (_draggedNodeId != null) {
       widget.controller.updateStatePosition(_draggedNodeId!, scenePos);
@@ -204,9 +223,31 @@ class _AutomataCanvasState extends State<AutomataCanvas> {
   void _onPointerUp(PointerUpEvent event) {
     if (_isDraggingWire) {
       final scenePos = _toScene(event.localPosition);
-      final targetNode = _hitTestNode(scenePos, extraRadius: 10.0);
-      widget.controller.endWireDrag(targetNode?.id);
+      final sourceId = _wireSourceId ?? widget.controller.wireSourceStateId;
+
+      if (sourceId != null) {
+        if (!_wireDragMoved) {
+          // Direct tap/click on the plus handle -> auto-add connected state!
+          widget.controller.autoAddConnectedNode(sourceId);
+        } else {
+          // Dragged wire: check if dropped on a node
+          final targetNode = _hitTestNode(scenePos, extraRadius: 10.0);
+          if (targetNode != null) {
+            // Dropped on an existing node (or self for self-loop)
+            widget.controller.connectStates(sourceId, targetNode.id);
+          } else {
+            // Dropped wire onto empty canvas -> auto-add connected state at drop position!
+            widget.controller.autoAddConnectedNode(sourceId, position: scenePos);
+          }
+        }
+      }
+
+      widget.controller.endWireDrag(null);
       _isDraggingWire = false;
+      _wireSourceId = null;
+      _wireStartPos = null;
+      _wireDragMoved = false;
+      _isHoveringHandle = false;
     }
     _draggedNodeId = null;
     setState(() {});
@@ -285,6 +326,8 @@ class _AutomataCanvasState extends State<AutomataCanvas> {
                             selectedStateId: widget.controller.selectedStateId,
                             selectedTransitionId:
                                 widget.controller.selectedTransitionId,
+                            activeTransitionId:
+                                widget.controller.activeTransitionId,
                             wireSourceStateId:
                                 widget.controller.wireSourceStateId,
                             wireCurrentPosition:
@@ -343,7 +386,7 @@ class _AutomataCanvasState extends State<AutomataCanvas> {
                                     size: 16, color: Color(0xFF00E5FF)),
                                 const SizedBox(width: 8),
                                 Text(
-                                  'Connecting from ${widget.controller.automaton.states[_connectingSourceId]?.label ?? _connectingSourceId} → Click target state (or click self for loop)',
+                                  'Connecting from ${widget.controller.automaton.states[_connectingSourceId]?.label ?? _connectingSourceId} → Click target state or canvas to add node',
                                   style: const TextStyle(
                                     color: Colors.white,
                                     fontSize: 12,
@@ -444,6 +487,39 @@ class _AutomataCanvasState extends State<AutomataCanvas> {
                           fontSize: 11,
                           fontWeight: FontWeight.bold,
                           color: Color(0xFF00E5FF),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 4),
+
+              // Auto-Add Connected Node Button
+              InkWell(
+                onTap: () => widget.controller.autoAddConnectedNode(node.id),
+                borderRadius: BorderRadius.circular(12),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: Colors.transparent,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.add,
+                        size: 13,
+                        color: Color(0xFF67E8F9),
+                      ),
+                      SizedBox(width: 3),
+                      Text(
+                        '+ Node',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF67E8F9),
                         ),
                       ),
                     ],

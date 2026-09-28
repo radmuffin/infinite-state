@@ -60,6 +60,11 @@ class StudioController extends ChangeNotifier {
   String? _wireSourceStateId;
   Offset? _wireCurrentPosition;
 
+  // Active / last created transition for direct keyboard input
+  String? _lastActiveTransitionId;
+  bool _isAwaitingCommaAppend = false;
+  bool _transitionTypingActive = false;
+
   AutomataSimulator? _simulator;
   Timer? _playbackTimer;
   bool _isPlaying = false;
@@ -88,6 +93,24 @@ class StudioController extends ChangeNotifier {
   String get inputTape => _inputTape;
   String? get selectedStateId => _selectedStateId;
   String? get selectedTransitionId => _selectedTransitionId;
+  String? get activeTransitionId => _selectedTransitionId ?? _lastActiveTransitionId;
+  bool get hasActiveOrSelectedTransition {
+    final targetId = activeTransitionId;
+    if (targetId == null) return false;
+    return _automaton.transitions.any((t) => t.id == targetId);
+  }
+  bool get isAwaitingCommaAppend => _isAwaitingCommaAppend;
+  bool get transitionTypingActive => _transitionTypingActive;
+  bool get canBackspaceTransitionSymbol {
+    if (!_transitionTypingActive) return false;
+    final targetId = activeTransitionId;
+    if (targetId == null) return false;
+    final transition = _automaton.transitions.firstWhere(
+      (t) => t.id == targetId,
+      orElse: () => Transition(id: '', fromId: '', toId: '', symbols: {}),
+    );
+    return transition.symbols.length > 1;
+  }
   String? get wireSourceStateId => _wireSourceStateId;
   Offset? get wireCurrentPosition => _wireCurrentPosition;
   AutomataSimulator? get simulator => _simulator;
@@ -227,6 +250,9 @@ class StudioController extends ChangeNotifier {
       _selectedStateId = null;
       _selectedTransitionId = null;
       _wireSourceStateId = null;
+      _lastActiveTransitionId = null;
+      _isAwaitingCommaAppend = false;
+      _transitionTypingActive = false;
       _initSimulator();
       _syncGraphToRegexInternal();
       notifyListeners();
@@ -236,12 +262,18 @@ class StudioController extends ChangeNotifier {
   void selectState(String? id) {
     _selectedStateId = id;
     _selectedTransitionId = null;
+    _lastActiveTransitionId = null;
+    _isAwaitingCommaAppend = false;
+    _transitionTypingActive = false;
     notifyListeners();
   }
 
   void selectTransition(String? id) {
     _selectedTransitionId = id;
     _selectedStateId = null;
+    _lastActiveTransitionId = id;
+    _isAwaitingCommaAppend = false;
+    _transitionTypingActive = false;
     notifyListeners();
   }
 
@@ -317,6 +349,8 @@ class StudioController extends ChangeNotifier {
 
   void deleteSelected() {
     _recordHistory();
+    _transitionTypingActive = false;
+    _isAwaitingCommaAppend = false;
     if (_selectedStateId != null) {
       _automaton = _automaton.removeNode(_selectedStateId!);
       _selectedStateId = null;
@@ -358,13 +392,23 @@ class StudioController extends ChangeNotifier {
     notifyListeners();
   }
 
+  String _generateTransitionId() {
+    var id = 't_${DateTime.now().microsecondsSinceEpoch}_${_automaton.transitions.length}';
+    int suffix = 0;
+    while (_automaton.transitions.any((t) => t.id == id)) {
+      id = 't_${DateTime.now().microsecondsSinceEpoch}_${++suffix}';
+    }
+    return id;
+  }
+
   void connectStates(String fromId, String toId, {String defaultSymbol = '0'}) {
     _recordHistory();
     final existing = _automaton.transitionsBetween(fromId, toId);
     if (existing.isNotEmpty) {
       _selectedTransitionId = existing.first.id;
+      _lastActiveTransitionId = existing.first.id;
     } else {
-      final newId = 't_${DateTime.now().millisecondsSinceEpoch}';
+      final newId = _generateTransitionId();
       final newTransition = Transition(
         id: newId,
         fromId: fromId,
@@ -373,9 +417,178 @@ class StudioController extends ChangeNotifier {
       );
       _automaton = _automaton.setTransition(newTransition);
       _selectedTransitionId = newId;
+      _lastActiveTransitionId = newId;
     }
+    _isAwaitingCommaAppend = false;
+    _transitionTypingActive = false;
     _initSimulator();
     notifyListeners();
+  }
+
+  /// Automatically creates a new state and connects [fromStateId] to it.
+  /// If [position] is omitted, an optimal non-overlapping position to the right is calculated.
+  /// If [symbol] is omitted, the next unused symbol from the alphabet is selected.
+  StateNode? autoAddConnectedNode(String fromStateId, {Offset? position, String? symbol}) {
+    final fromState = _automaton.states[fromStateId];
+    if (fromState == null) return null;
+
+    _recordHistory();
+    final targetPosition =
+        position ?? calculateNextNodePosition(fromState.position);
+
+    final count = _automaton.states.length;
+    String id = 'q$count';
+    int suffix = count;
+    while (_automaton.states.containsKey(id)) {
+      id = 'q${++suffix}';
+    }
+
+    final isFirst = _automaton.states.isEmpty;
+    final newNode = StateNode(
+      id: id,
+      label: id,
+      position: targetPosition,
+      isInitial: isFirst,
+      isAccept: false,
+    );
+
+    _automaton = _automaton.setNode(newNode);
+
+    final transitionSymbol = symbol ?? _chooseDefaultSymbol(fromStateId);
+    final newId = _generateTransitionId();
+    final newTransition = Transition(
+      id: newId,
+      fromId: fromStateId,
+      toId: newNode.id,
+      symbols: {transitionSymbol},
+    );
+    _automaton = _automaton.setTransition(newTransition);
+
+    _selectedStateId = newNode.id;
+    _selectedTransitionId = null;
+    _lastActiveTransitionId = newId;
+    _isAwaitingCommaAppend = false;
+    _transitionTypingActive = false;
+
+    _initSimulator();
+    notifyListeners();
+    return newNode;
+  }
+
+  /// Direct keyboard entry of connector symbol(s) without needing to click any text field.
+  /// Supports typing sequential characters directly (e.g. typing 'a' then 'b' yields "a, b"),
+  /// multi-character strings (e.g. "ab" yields "a, b"), or comma/space separated inputs ("a, b").
+  void typeTransitionSymbol(String input) {
+    if (input.isEmpty) return;
+    final targetId = activeTransitionId;
+    if (targetId == null) return;
+
+    final transition = _automaton.transitions.firstWhere(
+      (t) => t.id == targetId,
+      orElse: () => Transition(id: '', fromId: '', toId: '', symbols: {}),
+    );
+    if (transition.id.isEmpty) return;
+
+    _recordHistory();
+
+    if (input == ',') {
+      _isAwaitingCommaAppend = true;
+      _transitionTypingActive = true;
+      notifyListeners();
+      return;
+    }
+
+    final currentSymbols = Set<String>.from(
+      _transitionTypingActive ? transition.symbols : <String>{},
+    );
+
+    for (int i = 0; i < input.length; i++) {
+      final ch = input[i];
+      if (ch == ',' || ch == ' ') {
+        _isAwaitingCommaAppend = true;
+        continue;
+      }
+      currentSymbols.add(ch);
+      _explicitAlphabet.add(ch);
+      _isAwaitingCommaAppend = false;
+    }
+
+    if (currentSymbols.isNotEmpty) {
+      _transitionTypingActive = true;
+      _automaton = _automaton.setTransition(transition.copyWith(symbols: currentSymbols));
+      _initSimulator();
+      notifyListeners();
+    }
+  }
+
+  /// Concludes active direct keyboard symbol entry for the current connector.
+  void finishTransitionTyping() {
+    _transitionTypingActive = false;
+    _isAwaitingCommaAppend = false;
+    notifyListeners();
+  }
+
+  /// Removes the most recently added symbol from the active transition during keyboard typing.
+  void backspaceTransitionSymbol() {
+    final targetId = activeTransitionId;
+    if (targetId == null) return;
+    final transition = _automaton.transitions.firstWhere(
+      (t) => t.id == targetId,
+      orElse: () => Transition(id: '', fromId: '', toId: '', symbols: {}),
+    );
+    if (transition.id.isEmpty || transition.symbols.length <= 1) return;
+
+    _recordHistory();
+    final list = transition.symbols.toList();
+    list.removeLast();
+    _automaton = _automaton.setTransition(transition.copyWith(symbols: list.toSet()));
+    _initSimulator();
+    notifyListeners();
+  }
+
+  /// Calculates a non-overlapping position near [sourcePos] for a newly connected node.
+  Offset calculateNextNodePosition(Offset sourcePos) {
+    const spacingX = 140.0;
+    const spacingY = 90.0;
+    final candidates = [
+      sourcePos + const Offset(spacingX, 0),
+      sourcePos + const Offset(spacingX, spacingY),
+      sourcePos + const Offset(spacingX, -spacingY),
+      sourcePos + const Offset(spacingX, spacingY * 2),
+      sourcePos + const Offset(spacingX, -spacingY * 2),
+      sourcePos + const Offset(spacingX * 2, 0),
+    ];
+
+    for (final candidate in candidates) {
+      bool collision = false;
+      for (final s in _automaton.states.values) {
+        if ((s.position - candidate).distance < 60.0) {
+          collision = true;
+          break;
+        }
+      }
+      if (!collision) {
+        return candidate;
+      }
+    }
+    return sourcePos + Offset(spacingX + (_automaton.states.length * 20.0), 0);
+  }
+
+  /// Chooses an intuitive default transition symbol for outgoing transitions from [fromId].
+  String _chooseDefaultSymbol(String fromId) {
+    final outgoingTransitions = _automaton.transitionsFrom(fromId);
+    final usedSymbols = <String>{};
+    for (final t in outgoingTransitions) {
+      usedSymbols.addAll(t.symbols);
+    }
+    final alphabet = fullAlphabet.toList()..sort();
+    for (final sym in alphabet) {
+      if (!usedSymbols.contains(sym)) {
+        return sym;
+      }
+    }
+    if (alphabet.isNotEmpty) return alphabet.first;
+    return '0';
   }
 
   void updateTransitionSymbols(String transitionId, Set<String> symbols) {
@@ -426,6 +639,8 @@ class StudioController extends ChangeNotifier {
 
   void deleteTransition(String transitionId) {
     _recordHistory();
+    _transitionTypingActive = false;
+    _isAwaitingCommaAppend = false;
     _automaton = _automaton.removeTransition(transitionId);
     if (_selectedTransitionId == transitionId) {
       _selectedTransitionId = null;
@@ -570,6 +785,9 @@ class StudioController extends ChangeNotifier {
     _automaton = Automaton();
     _selectedStateId = null;
     _selectedTransitionId = null;
+    _lastActiveTransitionId = null;
+    _isAwaitingCommaAppend = false;
+    _transitionTypingActive = false;
     _wireSourceStateId = null;
     _initSimulator();
     notifyListeners();

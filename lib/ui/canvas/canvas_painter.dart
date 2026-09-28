@@ -14,11 +14,13 @@ class CanvasPainter extends CustomPainter {
   final Set<String> activeStateIds;
   final Set<String> activeTransitionIds;
   final bool isSimulationStuck;
+  final String? activeTransitionId;
 
   CanvasPainter({
     required this.automaton,
     this.selectedStateId,
     this.selectedTransitionId,
+    this.activeTransitionId,
     this.wireSourceStateId,
     this.wireCurrentPosition,
     this.hoveredStateId,
@@ -58,7 +60,7 @@ class CanvasPainter extends CustomPainter {
       final toNode = automaton.states[t.toId];
       if (fromNode == null || toNode == null) continue;
 
-      final isSelected = t.id == selectedTransitionId;
+      final isSelected = t.id == selectedTransitionId || t.id == activeTransitionId;
       final isActive = activeTransitionIds.contains(t.id);
       final isHovered = t.id == hoveredTransitionId;
 
@@ -373,6 +375,45 @@ class CanvasPainter extends CustomPainter {
           ..strokeCap = StrokeCap.round;
         canvas.drawLine(handlePos - const Offset(4, 0), handlePos + const Offset(4, 0), plusPaint);
         canvas.drawLine(handlePos - const Offset(0, 4), handlePos + const Offset(0, 4), plusPaint);
+
+        // Tooltip hint on hover
+        if (isHoveringHandle) {
+          final tp = TextPainter(
+            text: const TextSpan(
+              text: 'Click: add node · Drag: connect',
+              style: TextStyle(
+                color: Color(0xFFE2E8F0),
+                fontSize: 10,
+                fontWeight: FontWeight.w600,
+                fontFamily: 'monospace',
+              ),
+            ),
+            textDirection: TextDirection.ltr,
+          )..layout();
+          final tooltipRect = RRect.fromRectAndRadius(
+            Rect.fromCenter(
+              center: handlePos + const Offset(0, -22),
+              width: tp.width + 12,
+              height: tp.height + 6,
+            ),
+            const Radius.circular(6),
+          );
+          canvas.drawRRect(
+            tooltipRect,
+            Paint()..color = const Color(0xEE1E2333),
+          );
+          canvas.drawRRect(
+            tooltipRect,
+            Paint()
+              ..color = const Color(0xFF00E5FF)
+              ..style = PaintingStyle.stroke
+              ..strokeWidth = 1.0,
+          );
+          tp.paint(
+            canvas,
+            handlePos + Offset(-tp.width / 2, -22 - tp.height / 2),
+          );
+        }
       }
     }
   }

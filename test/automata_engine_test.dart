@@ -300,5 +300,101 @@ void main() {
 
       controller.dispose();
     });
+
+    test('StudioController autoAddConnectedNode creates node, connector, and handles chaining and undo', () {
+      final controller = StudioController(initialAutomaton: Automaton());
+      controller.addStateAt(const Offset(100, 100)); // Creates q0
+      expect(controller.automaton.states.containsKey('q0'), isTrue);
+      expect(controller.automaton.transitions, isEmpty);
+
+      // 1. Auto add node from q0
+      final q1 = controller.autoAddConnectedNode('q0');
+      expect(q1, isNotNull);
+      expect(controller.automaton.states.containsKey(q1!.id), isTrue);
+      expect(controller.selectedStateId, equals(q1.id));
+      expect(controller.automaton.transitions.length, equals(1));
+
+      final t1 = controller.automaton.transitions.first;
+      expect(t1.fromId, equals('q0'));
+      expect(t1.toId, equals(q1.id));
+      expect(t1.symbols, contains('0'));
+
+      // 2. Chain another node from q1
+      final q2 = controller.autoAddConnectedNode(q1.id);
+      expect(q2, isNotNull);
+      expect(controller.selectedStateId, equals(q2!.id));
+      expect(controller.automaton.transitions.length, equals(2));
+      expect(q2.position.dx, greaterThan(q1.position.dx));
+
+      // 3. Auto add branching node from q0 (should pick '1' since '0' is used)
+      final q3 = controller.autoAddConnectedNode('q0');
+      expect(q3, isNotNull);
+      final transitionsFromQ0 = controller.automaton.transitionsFrom('q0');
+      expect(transitionsFromQ0.length, equals(2));
+      final tBranch = transitionsFromQ0.firstWhere((t) => t.toId == q3!.id);
+      expect(tBranch.symbols, contains('1'));
+
+      // Non-overlapping check: q3 position should not collide with q1
+      expect((q3!.position - q1.position).distance, greaterThanOrEqualTo(60.0));
+
+      // 4. Undo should remove q3 and its transition
+      controller.undo();
+      expect(controller.automaton.states.containsKey(q3.id), isFalse);
+      expect(controller.automaton.transitions.any((t) => t.toId == q3.id), isFalse);
+
+      controller.dispose();
+    });
+
+    test('StudioController typeTransitionSymbol interprets "ab" as "a, b" without requiring comma', () {
+      final controller = StudioController(initialAutomaton: Automaton());
+      controller.addStateAt(const Offset(100, 100)); // creates q0
+
+      // Auto add node q1 -> sets active connector to q0 -> q1 (default symbol '0')
+      controller.autoAddConnectedNode('q0');
+      expect(controller.hasActiveOrSelectedTransition, isTrue);
+
+      // Type 'a' directly without clicking anything -> replaces default '0' with 'a'
+      controller.typeTransitionSymbol('a');
+      var t = controller.automaton.transitions.first;
+      expect(t.symbols, equals({'a'}));
+      expect(controller.transitionTypingActive, isTrue);
+
+      // Type 'b' directly WITHOUT typing comma -> automatically appends to form {'a', 'b'}
+      controller.typeTransitionSymbol('b');
+      t = controller.automaton.transitions.first;
+      expect(t.symbols, equals({'a', 'b'}));
+
+      // Type 'c' directly -> appends to form {'a', 'b', 'c'}
+      controller.typeTransitionSymbol('c');
+      t = controller.automaton.transitions.first;
+      expect(t.symbols, equals({'a', 'b', 'c'}));
+
+      // Backspace removes the most recently added symbol ('c') -> leaving {'a', 'b'}
+      expect(controller.canBackspaceTransitionSymbol, isTrue);
+      controller.backspaceTransitionSymbol();
+      t = controller.automaton.transitions.first;
+      expect(t.symbols, equals({'a', 'b'}));
+
+      // Reselecting the transition starts a fresh session; typing 'x' replaces previous symbols
+      controller.selectTransition(t.id);
+      expect(controller.transitionTypingActive, isFalse);
+      controller.typeTransitionSymbol('x');
+      t = controller.automaton.transitions.first;
+      expect(t.symbols, equals({'x'}));
+
+      // Multi-character string "ab" is also supported and yields {'a', 'b'}
+      controller.finishTransitionTyping();
+      controller.typeTransitionSymbol('ab');
+      t = controller.automaton.transitions.first;
+      expect(t.symbols, equals({'a', 'b'}));
+
+      // Comma-separated string "0, 1" is also supported and yields {'0', '1'}
+      controller.finishTransitionTyping();
+      controller.typeTransitionSymbol('0, 1');
+      t = controller.automaton.transitions.first;
+      expect(t.symbols, equals({'0', '1'}));
+
+      controller.dispose();
+    });
   });
 }

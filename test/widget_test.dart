@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:infinite_state/main.dart';
 import 'package:infinite_state/ui/canvas/automata_canvas.dart';
 import 'package:infinite_state/ui/panels/simulation_bar.dart';
@@ -315,6 +316,168 @@ void main() {
     // Canvas should now contain states for (a|b)*abb
     expect(find.text('Synced'), findsNothing); // Or verify status banner
     expect(find.text('In Sync with Graph'), findsOneWidget);
+  });
+
+  testWidgets('Adding a node allows auto-adding a connected node via + Node button and connector handle',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1280, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    await tester.pumpWidget(const InfiniteStateApp());
+    await tester.pumpAndSettle();
+
+    final canvasFinder = find.byType(AutomataCanvas);
+    expect(canvasFinder, findsOneWidget);
+    final canvasWidget = tester.widget<AutomataCanvas>(canvasFinder);
+    final controller = canvasWidget.controller;
+
+    // Clear canvas so we start fresh
+    controller.clearAutomaton();
+    await tester.pumpAndSettle();
+    expect(controller.automaton.states, isEmpty);
+
+    // 1. Add a single node q0 at (400, 300)
+    controller.addStateAt(const Offset(400, 300));
+    await tester.pumpAndSettle();
+
+    expect(controller.automaton.states.length, equals(1));
+    expect(controller.selectedStateId, equals('q0'));
+
+    // Verify + Node quick action pill button is visible for selected state
+    expect(find.text('+ Node'), findsOneWidget);
+
+    // 2. Hit the '+ Node' quick action button
+    await tester.tap(find.text('+ Node'));
+    await tester.pumpAndSettle();
+
+    // Verify a new node was automatically created and connected
+    expect(controller.automaton.states.length, equals(2));
+    final q1 = controller.automaton.states['q1'];
+    expect(q1, isNotNull);
+    expect(controller.selectedStateId, equals('q1')); // Newly created node is selected
+
+    // Verify transition exists from q0 -> q1
+    final transitions = controller.automaton.transitionsBetween('q0', 'q1');
+    expect(transitions, isNotEmpty);
+
+    // 3. Test hitting the plus connector handle on the canvas directly
+    // The newly selected node q1 has a handle at (q1.position + Offset(26 + 14, 0))
+    // Get transformation controller to convert scene pos to global
+    final interactiveViewerFinder = find.byType(InteractiveViewer);
+    final iv = tester.widget<InteractiveViewer>(interactiveViewerFinder);
+    final matrix = iv.transformationController!.value;
+    final ivOrigin = tester.getTopLeft(interactiveViewerFinder);
+    final q1HandleScenePos = q1!.position + const Offset(40.0, 0.0);
+    final q1HandleGlobalPos = ivOrigin + MatrixUtils.transformPoint(matrix, q1HandleScenePos);
+
+    // Tap on the plus handle
+    final gesture = await tester.startGesture(q1HandleGlobalPos);
+    await tester.pump(const Duration(milliseconds: 50));
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    // Verify a 3rd node q2 was automatically created and connected from q1
+    expect(controller.automaton.states.length, equals(3));
+    final q2 = controller.automaton.states['q2'];
+    expect(q2, isNotNull);
+    expect(controller.selectedStateId, equals('q2'));
+    expect(controller.automaton.transitionsBetween('q1', 'q2'), isNotEmpty);
+
+    // 4. Test dragging from the plus handle into empty canvas space
+    final q2HandleScenePos = q2!.position + const Offset(40.0, 0.0);
+    final q2HandleGlobalPos = ivOrigin + MatrixUtils.transformPoint(matrix, q2HandleScenePos);
+    final dragDropGlobalPos = q2HandleGlobalPos + const Offset(120.0, 100.0);
+
+    final dragGesture = await tester.startGesture(q2HandleGlobalPos);
+    await tester.pump(const Duration(milliseconds: 50));
+    await dragGesture.moveTo(dragDropGlobalPos);
+    await tester.pump(const Duration(milliseconds: 50));
+    await dragGesture.up();
+    await tester.pumpAndSettle();
+
+    // Verify a 4th node q3 was created at the drop location and connected from q2
+    expect(controller.automaton.states.length, equals(4));
+    final q3 = controller.automaton.states['q3'];
+    expect(q3, isNotNull);
+    expect(controller.selectedStateId, equals('q3'));
+    expect(controller.automaton.transitionsBetween('q2', 'q3'), isNotEmpty);
+
+    // 5. Test dragging from the plus handle to an EXISTING node (q3 -> q0)
+    final q3HandleScenePos = q3!.position + const Offset(40.0, 0.0);
+    final q3HandleGlobalPos = ivOrigin + MatrixUtils.transformPoint(matrix, q3HandleScenePos);
+    final q0GlobalPos = ivOrigin + MatrixUtils.transformPoint(matrix, controller.automaton.states['q0']!.position);
+
+    final connectExistingGesture = await tester.startGesture(q3HandleGlobalPos);
+    await tester.pump(const Duration(milliseconds: 50));
+    await connectExistingGesture.moveTo(q0GlobalPos);
+    await tester.pump(const Duration(milliseconds: 50));
+    await connectExistingGesture.up();
+    await tester.pumpAndSettle();
+
+    // Verify NO new node was created (still 4 states) and transition q3 -> q0 exists
+    expect(controller.automaton.states.length, equals(4));
+    expect(controller.automaton.transitionsBetween('q3', 'q0'), isNotEmpty);
+  });
+
+  testWidgets('Typing characters directly assigns them to the connector without middle steps',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1280, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    await tester.pumpWidget(const InfiniteStateApp());
+    await tester.pumpAndSettle();
+
+    final canvasFinder = find.byType(AutomataCanvas);
+    final canvasWidget = tester.widget<AutomataCanvas>(canvasFinder);
+    final controller = canvasWidget.controller;
+
+    // Clear canvas
+    controller.clearAutomaton();
+    await tester.pumpAndSettle();
+
+    // 1. Add state q0
+    controller.addStateAt(const Offset(400, 300));
+    await tester.pumpAndSettle();
+
+    // 2. Click '+ Node' to add a connector and auto-add node q1
+    await tester.tap(find.text('+ Node'));
+    await tester.pumpAndSettle();
+
+    final initialTransition = controller.automaton.transitionsBetween('q0', 'q1').first;
+    expect(initialTransition.symbols, contains('0'));
+
+    // 3. Directly type 'a' without clicking anything!
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyA, character: 'a');
+    await tester.pumpAndSettle();
+
+    var updatedTransition = controller.automaton.transitionsBetween('q0', 'q1').first;
+    expect(updatedTransition.symbols, equals({'a'}));
+
+    // 4. Directly type 'b' without needing comma -> automatically interpreted as 'a, b'!
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyB, character: 'b');
+    await tester.pumpAndSettle();
+
+    updatedTransition = controller.automaton.transitionsBetween('q0', 'q1').first;
+    expect(updatedTransition.symbols, equals({'a', 'b'}));
+
+    // 5. Backspace removes the most recent symbol 'b', restoring 'a'
+    await tester.sendKeyEvent(LogicalKeyboardKey.backspace);
+    await tester.pumpAndSettle();
+
+    updatedTransition = controller.automaton.transitionsBetween('q0', 'q1').first;
+    expect(updatedTransition.symbols, equals({'a'}));
+
+    // 6. Select transition and type 'c' directly to start fresh session
+    controller.selectTransition(updatedTransition.id);
+    await tester.pumpAndSettle();
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyC, character: 'c');
+    await tester.pumpAndSettle();
+
+    updatedTransition = controller.automaton.transitionsBetween('q0', 'q1').first;
+    expect(updatedTransition.symbols, equals({'c'}));
   });
 }
 
