@@ -29,6 +29,7 @@ void main() {
 
     // Verify Consolidated Right Sidebar Activity Rail
     expect(find.byTooltip('Inspector & Matrix'), findsOneWidget);
+    expect(find.byTooltip('Regex & Language L(M)'), findsOneWidget);
     expect(find.byTooltip('Batch Testing Suite'), findsOneWidget);
     expect(find.byTooltip('Library & Presets'), findsOneWidget);
 
@@ -276,6 +277,44 @@ void main() {
     final updatedTrans = controller.automaton.transitions
         .firstWhere((t) => t.id == firstTransition.id);
     expect(updatedTrans.symbols.contains('1'), isTrue);
+  });
+
+  testWidgets('RightSidebar opens Regex panel and supports compile to graph and extract regex',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1280, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    await tester.pumpWidget(const InfiniteStateApp());
+    await tester.pumpAndSettle();
+
+    // Tap Regex Studio rail icon
+    await tester.tap(find.byTooltip('Regex & Language L(M)'));
+    await tester.pumpAndSettle();
+
+    // Verify Regex Panel opened
+    expect(find.text('REGEX & LANGUAGE'), findsOneWidget);
+    expect(find.text('REGULAR EXPRESSION'), findsOneWidget);
+    expect(find.text('Compile Regex → Canvas Graph'), findsOneWidget);
+    expect(find.text('Extract Graph → Regex'), findsOneWidget);
+    expect(find.text('Live Auto-Sync'), findsOneWidget);
+
+    // Enter a new regex pattern
+    final regexInputFinder = find.byWidgetPredicate(
+      (widget) => widget is TextField && widget.decoration?.hintText?.contains('e.g.') == true,
+    );
+    expect(regexInputFinder, findsOneWidget);
+
+    await tester.enterText(regexInputFinder, '(a|b)*abb');
+    await tester.pumpAndSettle();
+
+    // Tap Compile Regex -> Canvas Graph
+    await tester.tap(find.text('Compile Regex → Canvas Graph'));
+    await tester.pumpAndSettle();
+
+    // Canvas should now contain states for (a|b)*abb
+    expect(find.text('Synced'), findsNothing); // Or verify status banner
+    expect(find.text('In Sync with Graph'), findsOneWidget);
   });
 }
 

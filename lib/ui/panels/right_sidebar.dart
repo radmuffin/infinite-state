@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../state/studio_controller.dart';
 import 'batch_test_dialog.dart';
 import 'inspector_panel.dart';
+import 'regex_panel.dart';
 import 'save_load_dialog.dart';
 
 class RightSidebar extends StatelessWidget {
@@ -50,7 +51,17 @@ class RightSidebar extends StatelessWidget {
 
                   const SizedBox(height: 4),
 
-                  // 2. Batch Tests Tab
+                  // 2. Regex Studio Tab
+                  _buildRailTab(
+                    icon: Icons.code,
+                    tooltip: 'Regex & Language L(M)',
+                    isActive: activeTab == SidebarTab.regex,
+                    onTap: () => controller.toggleSidebarTab(SidebarTab.regex),
+                  ),
+
+                  const SizedBox(height: 4),
+
+                  // 3. Batch Tests Tab
                   _buildRailTab(
                     icon: Icons.playlist_add_check,
                     tooltip: 'Batch Testing Suite',
@@ -60,7 +71,7 @@ class RightSidebar extends StatelessWidget {
 
                   const SizedBox(height: 4),
 
-                  // 3. Library & Presets Tab
+                  // 4. Library & Presets Tab
                   _buildRailTab(
                     icon: Icons.folder_special,
                     tooltip: 'Library & Presets',
@@ -140,6 +151,11 @@ class RightSidebar extends StatelessWidget {
     switch (tab) {
       case SidebarTab.inspector:
         return InspectorPanel(
+          controller: controller,
+          onClose: () => controller.setSidebarTab(SidebarTab.none),
+        );
+      case SidebarTab.regex:
+        return RegexPanel(
           controller: controller,
           onClose: () => controller.setSidebarTab(SidebarTab.none),
         );
