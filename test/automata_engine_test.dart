@@ -4,6 +4,7 @@ import 'package:infinite_state/core/layout/sugiyama_layout.dart';
 import 'package:infinite_state/core/models/automaton.dart';
 import 'package:infinite_state/core/presets/example_automata.dart';
 import 'package:infinite_state/state/studio_controller.dart';
+import 'package:infinite_state/ui/canvas/transition_curve.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -183,6 +184,121 @@ void main() {
       expect(restored.initialState?.id, equals(original.initialState?.id));
       expect(restored.acceptStateIds, equals(original.acceptStateIds));
       expect(restored.alphabet, equals(original.alphabet));
+    });
+
+    test('TransitionGeometry hitTest detects clicks on edges and badges', () {
+      // 1. Straight edge from (100, 100) to (300, 100)
+      const fromPos = Offset(100, 100);
+      const toPos = Offset(300, 100);
+
+      // Midpoint on line segment: (200, 100)
+      expect(
+        TransitionGeometry.hitTest(
+          isSelfLoop: false,
+          fromPos: fromPos,
+          toPos: toPos,
+          hasReciprocal: false,
+          testPoint: const Offset(200, 100),
+        ),
+        isTrue,
+      );
+
+      // Slightly off the line within hitRadius (14px): (200, 108)
+      expect(
+        TransitionGeometry.hitTest(
+          isSelfLoop: false,
+          fromPos: fromPos,
+          toPos: toPos,
+          hasReciprocal: false,
+          testPoint: const Offset(200, 108),
+        ),
+        isTrue,
+      );
+
+      // Far away point: (200, 200) -> false
+      expect(
+        TransitionGeometry.hitTest(
+          isSelfLoop: false,
+          fromPos: fromPos,
+          toPos: toPos,
+          hasReciprocal: false,
+          testPoint: const Offset(200, 200),
+        ),
+        isFalse,
+      );
+
+      // 2. Self-loop on (200, 200)
+      final loopGeom = TransitionGeometry.calculateSelfLoop(center: const Offset(200, 200));
+      // Clicking exactly on label position
+      expect(
+        TransitionGeometry.hitTest(
+          isSelfLoop: true,
+          fromPos: const Offset(200, 200),
+          toPos: const Offset(200, 200),
+          hasReciprocal: false,
+          testPoint: loopGeom.labelPosition,
+        ),
+        isTrue,
+      );
+
+      // 3. Reciprocal curved edge
+      final curvedGeom = TransitionGeometry.calculateEdge(
+        start: fromPos,
+        end: toPos,
+        hasReciprocal: true,
+      );
+      // Clicking near the label position of the curved edge
+      expect(
+        TransitionGeometry.hitTest(
+          isSelfLoop: false,
+          fromPos: fromPos,
+          toPos: toPos,
+          hasReciprocal: true,
+          testPoint: curvedGeom.labelPosition,
+        ),
+        isTrue,
+      );
+    });
+
+    test('StudioController connector mutation methods (toggle, endpoints, delete)', () {
+      final automaton = ExampleAutomata.binaryDivisibleBy3.automaton;
+      final controller = StudioController(initialAutomaton: automaton);
+
+      // Find transition from q0 to q1 (which is on '1')
+      final t = controller.automaton.transitions
+          .firstWhere((tr) => tr.fromId == 'q0' && tr.toId == 'q1');
+
+      // 1. Toggle symbol: add '0' so it triggers on both '1' and '0'
+      controller.toggleTransitionSymbol(t.id, '0');
+      var updatedT = controller.automaton.transitions.firstWhere((tr) => tr.id == t.id);
+      expect(updatedT.symbols, equals({'1', '0'}));
+
+      // Toggle '0' off
+      controller.toggleTransitionSymbol(t.id, '0');
+      updatedT = controller.automaton.transitions.firstWhere((tr) => tr.id == t.id);
+      expect(updatedT.symbols, equals({'1'}));
+
+      // 2. Update endpoints: redirect q0 -> q1 to q0 -> q2
+      controller.updateTransitionEndpoints(t.id, toId: 'q2');
+      final redirected = controller.automaton.transitions.firstWhere((tr) => tr.id == t.id);
+      expect(redirected.fromId, 'q0');
+      expect(redirected.toId, 'q2');
+
+      // 3. Delete transition
+      controller.deleteTransition(t.id);
+      expect(
+        controller.automaton.transitions.any((tr) => tr.id == t.id),
+        isFalse,
+      );
+
+      // Verify undo restores it
+      controller.undo();
+      expect(
+        controller.automaton.transitions.any((tr) => tr.id == t.id),
+        isTrue,
+      );
+
+      controller.dispose();
     });
   });
 }

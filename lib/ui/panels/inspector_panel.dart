@@ -202,9 +202,15 @@ class _InspectorPanelState extends State<InspectorPanel> {
   }
 
   Widget _buildTransitionInspector(Transition selectedTransition) {
-    final fromState =
-        widget.controller.automaton.states[selectedTransition.fromId];
-    final toState = widget.controller.automaton.states[selectedTransition.toId];
+    final automaton = widget.controller.automaton;
+    final allStates = automaton.states.values.toList();
+    final alphabet = widget.controller.fullAlphabet.toList()..sort();
+    if (automaton.hasEpsilonTransitions && !alphabet.contains(Transition.epsilon)) {
+      alphabet.add(Transition.epsilon);
+    }
+    if (!alphabet.contains(Transition.epsilon)) {
+      alphabet.add(Transition.epsilon);
+    }
 
     return Container(
       padding: const EdgeInsets.all(12),
@@ -221,17 +227,110 @@ class _InspectorPanelState extends State<InspectorPanel> {
               const Icon(Icons.arrow_right_alt,
                   size: 18, color: Color(0xFF00E5FF)),
               const SizedBox(width: 6),
-              Text(
-                '${fromState?.label ?? selectedTransition.fromId} → ${toState?.label ?? selectedTransition.toId}',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 13,
+              const Expanded(
+                child: Text(
+                  'Selected Connector',
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                  ),
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.close, size: 15, color: Color(0xFF94A3B8)),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
+                onPressed: () => widget.controller.selectTransition(null),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+
+          // From and To State Dropdowns
+          Row(
+            children: [
+              Expanded(
+                child: DropdownButtonFormField<String>(
+                  initialValue: selectedTransition.fromId,
+                  decoration: InputDecoration(
+                    labelText: 'From',
+                    labelStyle:
+                        const TextStyle(color: Color(0xFF94A3B8), fontSize: 11),
+                    isDense: true,
+                    filled: true,
+                    fillColor: const Color(0xFF13161F),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(6),
+                      borderSide: const BorderSide(color: Color(0xFF334155)),
+                    ),
+                    contentPadding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                  ),
+                  dropdownColor: const Color(0xFF1E2333),
+                  style: const TextStyle(color: Colors.white, fontSize: 12),
+                  items: allStates
+                      .map((s) => DropdownMenuItem(
+                            value: s.id,
+                            child: Text(s.label),
+                          ))
+                      .toList(),
+                  onChanged: (newFrom) {
+                    if (newFrom != null) {
+                      widget.controller.updateTransitionEndpoints(
+                        selectedTransition.id,
+                        fromId: newFrom,
+                      );
+                    }
+                  },
+                ),
+              ),
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 6),
+                child: Icon(Icons.arrow_forward,
+                    size: 14, color: Color(0xFF00E5FF)),
+              ),
+              Expanded(
+                child: DropdownButtonFormField<String>(
+                  initialValue: selectedTransition.toId,
+                  decoration: InputDecoration(
+                    labelText: 'To',
+                    labelStyle:
+                        const TextStyle(color: Color(0xFF94A3B8), fontSize: 11),
+                    isDense: true,
+                    filled: true,
+                    fillColor: const Color(0xFF13161F),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(6),
+                      borderSide: const BorderSide(color: Color(0xFF334155)),
+                    ),
+                    contentPadding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                  ),
+                  dropdownColor: const Color(0xFF1E2333),
+                  style: const TextStyle(color: Colors.white, fontSize: 12),
+                  items: allStates
+                      .map((s) => DropdownMenuItem(
+                            value: s.id,
+                            child: Text(s.label),
+                          ))
+                      .toList(),
+                  onChanged: (newTo) {
+                    if (newTo != null) {
+                      widget.controller.updateTransitionEndpoints(
+                        selectedTransition.id,
+                        toId: newTo,
+                      );
+                    }
+                  },
                 ),
               ),
             ],
           ),
           const SizedBox(height: 10),
+
+          // Symbols Text Field
           TextField(
             controller: _symbolsController,
             style: const TextStyle(
@@ -261,10 +360,79 @@ class _InspectorPanelState extends State<InspectorPanel> {
             },
           ),
           const SizedBox(height: 8),
+
+          // Quick Toggle Chips
+          const Text(
+            'Quick Toggle Symbols:',
+            style: TextStyle(color: Color(0xFF94A3B8), fontSize: 10),
+          ),
+          const SizedBox(height: 5),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: alphabet.map((sym) {
+              final isPresent = selectedTransition.symbols.contains(sym);
+              return InkWell(
+                onTap: () {
+                  widget.controller
+                      .toggleTransitionSymbol(selectedTransition.id, sym);
+                  final next = Set<String>.from(selectedTransition.symbols);
+                  if (isPresent) {
+                    next.remove(sym);
+                  } else {
+                    next.add(sym);
+                  }
+                  _symbolsController.text = next.join(', ');
+                },
+                borderRadius: BorderRadius.circular(12),
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: isPresent
+                        ? const Color(0xFF0E7490)
+                        : const Color(0xFF13161F),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: isPresent
+                          ? const Color(0xFF00E5FF)
+                          : const Color(0xFF334155),
+                      width: 1.0,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (isPresent) ...[
+                        const Icon(Icons.check,
+                            size: 11, color: Color(0xFF00E5FF)),
+                        const SizedBox(width: 3),
+                      ],
+                      Text(
+                        sym,
+                        style: TextStyle(
+                          color: isPresent
+                              ? Colors.white
+                              : const Color(0xFF94A3B8),
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          fontFamily: 'monospace',
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+          const SizedBox(height: 12),
+
+          // Delete Button
           SizedBox(
             width: double.infinity,
             child: OutlinedButton.icon(
-              onPressed: widget.controller.deleteSelected,
+              onPressed: () =>
+                  widget.controller.deleteTransition(selectedTransition.id),
               icon: const Icon(Icons.delete_outline,
                   size: 15, color: Color(0xFFF87171)),
               label: const Text('Delete Edge',

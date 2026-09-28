@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../core/models/state_node.dart';
+import '../../core/models/transition.dart';
 import '../../state/studio_controller.dart';
 import 'canvas_painter.dart';
 import 'transition_curve.dart';
@@ -21,6 +22,7 @@ class _AutomataCanvasState extends State<AutomataCanvas> {
 
   String? _draggedNodeId;
   String? _hoveredNodeId;
+  String? _hoveredTransitionId;
   bool _isHoveringHandle = false;
   bool _isDraggingWire = false;
   String? _connectingSourceId;
@@ -79,6 +81,31 @@ class _AutomataCanvasState extends State<AutomataCanvas> {
     return null;
   }
 
+  Transition? _hitTestTransition(Offset scenePos) {
+    // Check in reverse order so topmost drawn transitions are hit first
+    final transitions =
+        widget.controller.automaton.transitions.toList().reversed;
+    for (final t in transitions) {
+      final fromNode = widget.controller.automaton.states[t.fromId];
+      final toNode = widget.controller.automaton.states[t.toId];
+      if (fromNode == null || toNode == null) continue;
+
+      final hasReciprocal = widget.controller.automaton
+          .transitionsBetween(t.toId, t.fromId)
+          .isNotEmpty;
+      if (TransitionGeometry.hitTest(
+        isSelfLoop: t.isSelfLoop,
+        fromPos: fromNode.position,
+        toPos: toNode.position,
+        hasReciprocal: hasReciprocal,
+        testPoint: scenePos,
+      )) {
+        return t;
+      }
+    }
+    return null;
+  }
+
   bool _hitTestConnectionHandle(StateNode node, Offset scenePos) {
     final handlePos =
         node.position + const Offset(TransitionGeometry.nodeRadius + 14.0, 0);
@@ -126,9 +153,15 @@ class _AutomataCanvasState extends State<AutomataCanvas> {
       widget.controller.selectState(clickedNode.id);
       _draggedNodeId = clickedNode.id;
     } else {
-      // 4. Clicked canvas background -> deselect
-      widget.controller.selectState(null);
-      widget.controller.selectTransition(null);
+      // 4. Check if clicking a connector (transition)
+      final clickedTransition = _hitTestTransition(scenePos);
+      if (clickedTransition != null) {
+        widget.controller.selectTransition(clickedTransition.id);
+      } else {
+        // 5. Clicked canvas background -> deselect
+        widget.controller.selectState(null);
+        widget.controller.selectTransition(null);
+      }
     }
     setState(() {});
   }
@@ -138,12 +171,16 @@ class _AutomataCanvasState extends State<AutomataCanvas> {
     final selected = widget.controller.selectedState;
     final hoveredHandle =
         selected != null && _hitTestConnectionHandle(selected, scenePos);
+    final hoveredTransition =
+        hoveredNode == null ? _hitTestTransition(scenePos) : null;
 
     if (_hoveredNodeId != hoveredNode?.id ||
-        _isHoveringHandle != hoveredHandle) {
+        _isHoveringHandle != hoveredHandle ||
+        _hoveredTransitionId != hoveredTransition?.id) {
       setState(() {
         _hoveredNodeId = hoveredNode?.id;
         _isHoveringHandle = hoveredHandle;
+        _hoveredTransitionId = hoveredTransition?.id;
       });
     }
   }
@@ -179,8 +216,13 @@ class _AutomataCanvasState extends State<AutomataCanvas> {
     final scenePos = _toScene(details.localPosition);
     final clickedNode = _hitTestNode(scenePos);
     if (clickedNode == null) {
-      // Direct state creation on double click
-      widget.controller.addStateAt(scenePos);
+      final clickedTransition = _hitTestTransition(scenePos);
+      if (clickedTransition != null) {
+        widget.controller.selectTransition(clickedTransition.id);
+      } else {
+        // Direct state creation on double click on empty canvas
+        widget.controller.addStateAt(scenePos);
+      }
     }
   }
 
@@ -199,6 +241,7 @@ class _AutomataCanvasState extends State<AutomataCanvas> {
         final isStuck =
             widget.controller.simulator?.currentStep.isStuck ?? false;
         final selectedState = widget.controller.selectedState;
+        final selectedTransition = widget.controller.selectedTransition;
 
         final isConnecting = _connectingSourceId != null;
 
@@ -210,7 +253,9 @@ class _AutomataCanvasState extends State<AutomataCanvas> {
                     ? SystemMouseCursors.click
                     : (_hoveredNodeId != null
                         ? SystemMouseCursors.grab
-                        : SystemMouseCursors.basic)),
+                        : (_hoveredTransitionId != null
+                            ? SystemMouseCursors.click
+                            : SystemMouseCursors.basic))),
             onHover: _onPointerHover,
             child: Stack(
               children: [
@@ -245,6 +290,7 @@ class _AutomataCanvasState extends State<AutomataCanvas> {
                             wireCurrentPosition:
                                 widget.controller.wireCurrentPosition,
                             hoveredStateId: _hoveredNodeId,
+                            hoveredTransitionId: _hoveredTransitionId,
                             isHoveringHandle: _isHoveringHandle,
                             activeStateIds: widget.controller.activeStateIds,
                             activeTransitionIds:
@@ -260,6 +306,12 @@ class _AutomataCanvasState extends State<AutomataCanvas> {
                 // 2. Floating Quick-Action Pill for selected state (on top of canvas)
                 if (selectedState != null && !_isDraggingWire && !isConnecting)
                   _buildSelectedStateQuickActions(selectedState),
+
+                // 3. Floating Quick-Action Pill for selected transition (on top of canvas)
+                if (selectedTransition != null &&
+                    !_isDraggingWire &&
+                    !isConnecting)
+                  _buildSelectedTransitionQuickActions(selectedTransition),
 
                     // Connect Mode Banner
                     if (isConnecting)
@@ -342,154 +394,290 @@ class _AutomataCanvasState extends State<AutomataCanvas> {
     final screenPos = MatrixUtils.transformPoint(matrix, scenePos);
 
     return Positioned(
-      left: screenPos.dx - 120,
+      left: screenPos.dx,
       top: screenPos.dy,
-      child: Material(
-        color: const Color(0xFF1E2333),
-        borderRadius: BorderRadius.circular(20),
-        elevation: 8,
-        shadowColor: Colors.black.withValues(alpha: 0.5),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: const Color(0xFF3B445B), width: 1.2),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-            // Connect Button
-            InkWell(
-              onTap: () {
-                setState(() {
-                  _connectingSourceId = node.id;
-                  widget.controller.startWireDrag(node.id, node.position);
-                });
-              },
-              borderRadius: BorderRadius.circular(12),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                decoration: BoxDecoration(
-                  color: _connectingSourceId == node.id
-                      ? const Color(0xFF0E7490)
-                      : Colors.transparent,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      Icons.cable,
-                      size: 13,
-                      color: Color(0xFF00E5FF),
-                    ),
-                    SizedBox(width: 3),
-                    Text(
-                      'Connect',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold,
+      child: FractionalTranslation(
+        translation: const Offset(-0.5, 0.0),
+        child: Material(
+          color: const Color(0xFF1E2333),
+          borderRadius: BorderRadius.circular(20),
+          elevation: 8,
+          shadowColor: Colors.black.withValues(alpha: 0.5),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: const Color(0xFF3B445B), width: 1.2),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+              // Connect Button
+              InkWell(
+                onTap: () {
+                  setState(() {
+                    _connectingSourceId = node.id;
+                    widget.controller.startWireDrag(node.id, node.position);
+                  });
+                },
+                borderRadius: BorderRadius.circular(12),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: _connectingSourceId == node.id
+                        ? const Color(0xFF0E7490)
+                        : Colors.transparent,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.cable,
+                        size: 13,
                         color: Color(0xFF00E5FF),
                       ),
-                    ),
-                  ],
+                      SizedBox(width: 3),
+                      Text(
+                        'Connect',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF00E5FF),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(width: 4),
-            // Toggle Start
-            InkWell(
-              onTap: () => widget.controller.quickToggleInitial(node.id),
-              borderRadius: BorderRadius.circular(12),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                decoration: BoxDecoration(
-                  color: node.isInitial
-                      ? const Color(0xFF1E3A8A)
-                      : Colors.transparent,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      Icons.arrow_forward,
-                      size: 13,
-                      color: node.isInitial
-                          ? const Color(0xFF60A5FA)
-                          : const Color(0xFF94A3B8),
-                    ),
-                    const SizedBox(width: 3),
-                    Text(
-                      'Start',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold,
+              const SizedBox(width: 4),
+              // Toggle Start
+              InkWell(
+                onTap: () => widget.controller.quickToggleInitial(node.id),
+                borderRadius: BorderRadius.circular(12),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: node.isInitial
+                        ? const Color(0xFF1E3A8A)
+                        : Colors.transparent,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.arrow_forward,
+                        size: 13,
                         color: node.isInitial
-                            ? const Color(0xFF93C5FD)
+                            ? const Color(0xFF60A5FA)
                             : const Color(0xFF94A3B8),
                       ),
-                    ),
-                  ],
+                      const SizedBox(width: 3),
+                      Text(
+                        'Start',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: node.isInitial
+                              ? const Color(0xFF93C5FD)
+                              : const Color(0xFF94A3B8),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(width: 4),
+              const SizedBox(width: 4),
 
-            // Toggle Accept
-            InkWell(
-              onTap: () => widget.controller.quickToggleAccept(node.id),
-              borderRadius: BorderRadius.circular(12),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                decoration: BoxDecoration(
-                  color: node.isAccept
-                      ? const Color(0xFF064E3B)
-                      : Colors.transparent,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      Icons.trip_origin,
-                      size: 13,
-                      color: node.isAccept
-                          ? const Color(0xFF34D399)
-                          : const Color(0xFF94A3B8),
-                    ),
-                    const SizedBox(width: 3),
-                    Text(
-                      'Accept',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold,
+              // Toggle Accept
+              InkWell(
+                onTap: () => widget.controller.quickToggleAccept(node.id),
+                borderRadius: BorderRadius.circular(12),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: node.isAccept
+                        ? const Color(0xFF064E3B)
+                        : Colors.transparent,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.trip_origin,
+                        size: 13,
                         color: node.isAccept
-                            ? const Color(0xFF6EE7B7)
+                            ? const Color(0xFF34D399)
                             : const Color(0xFF94A3B8),
                       ),
-                    ),
-                  ],
+                      const SizedBox(width: 3),
+                      Text(
+                        'Accept',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: node.isAccept
+                              ? const Color(0xFF6EE7B7)
+                              : const Color(0xFF94A3B8),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(width: 4),
+              const SizedBox(width: 4),
 
-            // Delete
-            IconButton(
-              icon: const Icon(Icons.delete_outline, size: 14),
-              color: const Color(0xFFF87171),
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
-              tooltip: 'Delete State',
-              onPressed: () => widget.controller.deleteState(node.id),
-            ),
-          ],
+              // Delete
+              IconButton(
+                icon: const Icon(Icons.delete_outline, size: 14),
+                color: const Color(0xFFF87171),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
+                tooltip: 'Delete State',
+                onPressed: () => widget.controller.deleteState(node.id),
+              ),
+            ],
+          ),
         ),
       ),
     ),
   );
 }
+
+  Widget _buildSelectedTransitionQuickActions(Transition t) {
+    final fromNode = widget.controller.automaton.states[t.fromId];
+    final toNode = widget.controller.automaton.states[t.toId];
+    if (fromNode == null || toNode == null) return const SizedBox.shrink();
+
+    final Offset labelPos;
+    if (t.isSelfLoop) {
+      final geom =
+          TransitionGeometry.calculateSelfLoop(center: fromNode.position);
+      labelPos = geom.labelPosition;
+    } else {
+      final hasReciprocal = widget.controller.automaton
+          .transitionsBetween(t.toId, t.fromId)
+          .isNotEmpty;
+      final geom = TransitionGeometry.calculateEdge(
+        start: fromNode.position,
+        end: toNode.position,
+        hasReciprocal: hasReciprocal,
+      );
+      labelPos = geom.labelPosition;
+    }
+
+    final scenePos = labelPos + const Offset(0, -32.0);
+    final matrix = _transformController.value;
+    final screenPos = MatrixUtils.transformPoint(matrix, scenePos);
+
+    final alphabet = widget.controller.fullAlphabet.toList()..sort();
+    if (widget.controller.automaton.hasEpsilonTransitions &&
+        !alphabet.contains(Transition.epsilon)) {
+      alphabet.add(Transition.epsilon);
+    }
+    if (!alphabet.contains(Transition.epsilon)) {
+      alphabet.add(Transition.epsilon);
+    }
+
+    return Positioned(
+      left: screenPos.dx,
+      top: screenPos.dy,
+      child: FractionalTranslation(
+        translation: const Offset(-0.5, 0.0),
+        child: Material(
+          color: const Color(0xFF1E2333),
+          borderRadius: BorderRadius.circular(20),
+          elevation: 8,
+          shadowColor: Colors.black.withValues(alpha: 0.5),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: const Color(0xFF00E5FF), width: 1.2),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Edge label indicator
+                Text(
+                  '${fromNode.label} → ${toNode.label}:',
+                  style: const TextStyle(
+                    color: Color(0xFF94A3B8),
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                // Symbol quick-toggle chips
+                ...alphabet.map((sym) {
+                  final isPresent = t.symbols.contains(sym);
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 4),
+                    child: InkWell(
+                      onTap: () =>
+                          widget.controller.toggleTransitionSymbol(t.id, sym),
+                      borderRadius: BorderRadius.circular(10),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: isPresent
+                              ? const Color(0xFF0E7490)
+                              : const Color(0xFF13161F),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: isPresent
+                                ? const Color(0xFF00E5FF)
+                                : const Color(0xFF334155),
+                            width: 1.0,
+                          ),
+                        ),
+                        child: Text(
+                          sym,
+                          style: TextStyle(
+                            color: isPresent
+                                ? Colors.white
+                                : const Color(0xFF94A3B8),
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            fontFamily: 'monospace',
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                }),
+                const SizedBox(width: 4),
+                // Delete Transition Button
+                IconButton(
+                  icon: const Icon(Icons.delete_outline, size: 14),
+                  color: const Color(0xFFF87171),
+                  padding: EdgeInsets.zero,
+                  constraints:
+                      const BoxConstraints(minWidth: 22, minHeight: 22),
+                  tooltip: 'Delete Transition',
+                  onPressed: () => widget.controller.deleteTransition(t.id),
+                ),
+                const SizedBox(width: 2),
+                // Deselect / Close Button
+                IconButton(
+                  icon: const Icon(Icons.close, size: 13),
+                  color: const Color(0xFF94A3B8),
+                  padding: EdgeInsets.zero,
+                  constraints:
+                      const BoxConstraints(minWidth: 20, minHeight: 20),
+                  tooltip: 'Deselect',
+                  onPressed: () => widget.controller.selectTransition(null),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 
   @override
   void dispose() {

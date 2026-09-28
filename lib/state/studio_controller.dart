@@ -327,6 +327,49 @@ class StudioController extends ChangeNotifier {
     notifyListeners();
   }
 
+  void toggleTransitionSymbol(String transitionId, String symbol) {
+    final t = _automaton.transitions.firstWhere((t) => t.id == transitionId);
+    final nextSymbols = Set<String>.from(t.symbols);
+    if (nextSymbols.contains(symbol)) {
+      nextSymbols.remove(symbol);
+    } else {
+      nextSymbols.add(symbol);
+    }
+    updateTransitionSymbols(transitionId, nextSymbols);
+  }
+
+  void updateTransitionEndpoints(String transitionId, {String? fromId, String? toId}) {
+    final t = _automaton.transitions.firstWhere((t) => t.id == transitionId);
+    final targetFrom = fromId ?? t.fromId;
+    final targetTo = toId ?? t.toId;
+    if (targetFrom == t.fromId && targetTo == t.toId) return;
+
+    _recordHistory();
+    final existing = _automaton.transitionsBetween(targetFrom, targetTo);
+    if (existing.isNotEmpty && existing.first.id != transitionId) {
+      final mergedSymbols = Set<String>.from(existing.first.symbols)..addAll(t.symbols);
+      _automaton = _automaton.removeTransition(transitionId);
+      _automaton = _automaton.setTransition(existing.first.copyWith(symbols: mergedSymbols));
+      _selectedTransitionId = existing.first.id;
+    } else {
+      _automaton = _automaton.removeTransition(transitionId);
+      final updated = t.copyWith(fromId: targetFrom, toId: targetTo);
+      _automaton = _automaton.setTransition(updated);
+    }
+    _initSimulator();
+    notifyListeners();
+  }
+
+  void deleteTransition(String transitionId) {
+    _recordHistory();
+    _automaton = _automaton.removeTransition(transitionId);
+    if (_selectedTransitionId == transitionId) {
+      _selectedTransitionId = null;
+    }
+    _initSimulator();
+    notifyListeners();
+  }
+
   // --- Bi-Directional Editable Transition Matrix ---
 
   void addAlphabetSymbol(String symbol) {

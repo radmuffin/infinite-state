@@ -153,4 +153,102 @@ class TransitionGeometry {
 
     canvas.drawPath(path, paint..style = PaintingStyle.fill);
   }
+
+  /// Determines whether [testPoint] hits the transition edge (curve/line or badge).
+  static bool hitTest({
+    required bool isSelfLoop,
+    required Offset fromPos,
+    required Offset toPos,
+    required bool hasReciprocal,
+    required Offset testPoint,
+    double hitRadius = 14.0,
+  }) {
+    if (isSelfLoop) {
+      final geom = calculateSelfLoop(center: fromPos);
+      // 1. Direct hit on badge area (most intuitive place to click)
+      if ((testPoint - geom.labelPosition).distance <= 22.0) {
+        return true;
+      }
+
+      // 2. Check along the cubic loop curve
+      const startAngle = -3 * pi / 4;
+      const endAngle = -pi / 4;
+      const loopRadius = 32.0;
+
+      final p0 = fromPos + Offset(cos(startAngle), sin(startAngle)) * nodeRadius;
+      final p3 = fromPos + Offset(cos(endAngle), sin(endAngle)) * nodeRadius;
+      final p1 = fromPos + Offset(-loopRadius * 1.2, -nodeRadius - loopRadius * 1.8);
+      final p2 = fromPos + Offset(loopRadius * 1.2, -nodeRadius - loopRadius * 1.8);
+
+      for (double t = 0.0; t <= 1.0; t += 0.05) {
+        final oneMinusT = 1.0 - t;
+        final pt = p0 * (oneMinusT * oneMinusT * oneMinusT) +
+            p1 * (3.0 * oneMinusT * oneMinusT * t) +
+            p2 * (3.0 * oneMinusT * t * t) +
+            p3 * (t * t * t);
+        if ((testPoint - pt).distance <= hitRadius) {
+          return true;
+        }
+      }
+      return false;
+    } else {
+      final geom = calculateEdge(
+        start: fromPos,
+        end: toPos,
+        hasReciprocal: hasReciprocal,
+      );
+      // 1. Direct hit on badge area
+      if ((testPoint - geom.labelPosition).distance <= 22.0) {
+        return true;
+      }
+
+      // 2. Check straight line or curved quadratic Bézier
+      if (!hasReciprocal) {
+        final delta = toPos - fromPos;
+        final distance = delta.distance;
+        if (distance < 1.0) return false;
+        final unit = delta / distance;
+        final lineStart = fromPos + unit * nodeRadius;
+        final lineEnd = toPos - unit * nodeRadius;
+
+        final ab = lineEnd - lineStart;
+        final lenSq = ab.dx * ab.dx + ab.dy * ab.dy;
+        if (lenSq == 0) return (testPoint - lineStart).distance <= hitRadius;
+        final t = ((testPoint.dx - lineStart.dx) * ab.dx +
+                (testPoint.dy - lineStart.dy) * ab.dy) /
+            lenSq;
+        final clampedT = t.clamp(0.0, 1.0);
+        final proj = lineStart + ab * clampedT;
+        return (testPoint - proj).distance <= hitRadius;
+      } else {
+        final delta = toPos - fromPos;
+        final distance = delta.distance;
+        if (distance < 1.0) return false;
+        final unit = delta / distance;
+        final normal = Offset(-unit.dy, unit.dx);
+        const curveOffset = 36.0;
+        final midPoint = (fromPos + toPos) / 2;
+        final controlPoint = midPoint + normal * curveOffset;
+
+        final startToCtrl = controlPoint - fromPos;
+        final startUnit = startToCtrl / startToCtrl.distance;
+        final curveStart = fromPos + startUnit * nodeRadius;
+
+        final ctrlToEnd = toPos - controlPoint;
+        final endUnit = ctrlToEnd / ctrlToEnd.distance;
+        final curveEnd = toPos - endUnit * nodeRadius;
+
+        for (double t = 0.0; t <= 1.0; t += 0.05) {
+          final oneMinusT = 1.0 - t;
+          final pt = curveStart * (oneMinusT * oneMinusT) +
+              controlPoint * (2.0 * oneMinusT * t) +
+              curveEnd * (t * t);
+          if ((testPoint - pt).distance <= hitRadius) {
+            return true;
+          }
+        }
+        return false;
+      }
+    }
+  }
 }

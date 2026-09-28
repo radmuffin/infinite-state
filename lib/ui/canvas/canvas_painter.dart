@@ -10,6 +10,7 @@ class CanvasPainter extends CustomPainter {
   final String? wireSourceStateId;
   final Offset? wireCurrentPosition;
   final String? hoveredStateId;
+  final String? hoveredTransitionId;
   final Set<String> activeStateIds;
   final Set<String> activeTransitionIds;
   final bool isSimulationStuck;
@@ -21,6 +22,7 @@ class CanvasPainter extends CustomPainter {
     this.wireSourceStateId,
     this.wireCurrentPosition,
     this.hoveredStateId,
+    this.hoveredTransitionId,
     this.isHoveringHandle = false,
     required this.activeStateIds,
     required this.activeTransitionIds,
@@ -58,6 +60,7 @@ class CanvasPainter extends CustomPainter {
 
       final isSelected = t.id == selectedTransitionId;
       final isActive = activeTransitionIds.contains(t.id);
+      final isHovered = t.id == hoveredTransitionId;
 
       final Color baseColor;
       final double strokeWidth;
@@ -65,19 +68,25 @@ class CanvasPainter extends CustomPainter {
         baseColor = const Color(0xFF00E5FF); // Neon Cyan
         strokeWidth = 3.5;
       } else if (isSelected) {
-        baseColor = const Color(0xFF818CF8); // Indigo Accent
-        strokeWidth = 2.8;
+        baseColor = const Color(0xFF00E5FF); // Vivid Cyan when selected
+        strokeWidth = 3.0;
+      } else if (isHovered) {
+        baseColor = const Color(0xFF93C5FD); // Bright Sky Blue on hover
+        strokeWidth = 2.4;
       } else {
         baseColor = const Color(0xFF5B677E); // Slate line
         strokeWidth = 2.0;
       }
 
-      // Outer glow for active transition
-      if (isActive) {
+      // Outer glow for active or selected transition
+      if (isActive || isSelected) {
+        final glowColor = isActive
+            ? const Color(0x6600E5FF)
+            : const Color(0x4D00E5FF);
         final glowPaint = Paint()
-          ..color = const Color(0x6600E5FF)
+          ..color = glowColor
           ..style = PaintingStyle.stroke
-          ..strokeWidth = 9.0
+          ..strokeWidth = isSelected ? 8.0 : 9.0
           ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5.0);
 
         if (t.isSelfLoop) {
@@ -120,7 +129,7 @@ class CanvasPainter extends CustomPainter {
         labelPos = geom.labelPosition;
       }
 
-      _drawSymbolBadge(canvas, labelPos, t.symbols.join(', '), isSelected, isActive);
+      _drawSymbolBadge(canvas, labelPos, t.symbols.join(', '), isSelected, isActive, isHovered);
     }
   }
 
@@ -130,13 +139,14 @@ class CanvasPainter extends CustomPainter {
     String symbolsText,
     bool isSelected,
     bool isActive,
+    bool isHovered,
   ) {
     final textSpan = TextSpan(
       text: symbolsText.isEmpty ? 'ε' : symbolsText,
       style: TextStyle(
-        color: isActive
+        color: isActive || isSelected
             ? const Color(0xFF00E5FF)
-            : (isSelected ? const Color(0xFFA5B4FC) : const Color(0xFFE2E8F0)),
+            : (isHovered ? const Color(0xFF93C5FD) : const Color(0xFFE2E8F0)),
         fontSize: 12.0,
         fontWeight: FontWeight.bold,
         fontFamily: 'monospace',
@@ -155,27 +165,36 @@ class CanvasPainter extends CustomPainter {
       const Radius.circular(10.0),
     );
 
-    // Subtle drop shadow behind badge
-    canvas.drawRRect(
-      badgeRect.shift(const Offset(0, 2)),
-      Paint()
-        ..color = Colors.black.withValues(alpha: 0.4)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3.0),
-    );
+    // Drop shadow behind badge (cyan glow if selected)
+    if (isSelected) {
+      canvas.drawRRect(
+        badgeRect,
+        Paint()
+          ..color = const Color(0x6600E5FF)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6.0),
+      );
+    } else {
+      canvas.drawRRect(
+        badgeRect.shift(const Offset(0, 2)),
+        Paint()
+          ..color = Colors.black.withValues(alpha: 0.4)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3.0),
+      );
+    }
 
     // Pill background
     final bgPaint = Paint()
-      ..color = const Color(0xFF161922)
+      ..color = isSelected ? const Color(0xFF1E2838) : const Color(0xFF161922)
       ..style = PaintingStyle.fill;
     canvas.drawRRect(badgeRect, bgPaint);
 
     // Pill border
     final borderPaint = Paint()
-      ..color = isActive
+      ..color = isActive || isSelected
           ? const Color(0xFF00E5FF)
-          : (isSelected ? const Color(0xFF818CF8) : const Color(0xFF333B4F))
+          : (isHovered ? const Color(0xFF93C5FD) : const Color(0xFF333B4F))
       ..style = PaintingStyle.stroke
-      ..strokeWidth = isSelected || isActive ? 1.6 : 1.2;
+      ..strokeWidth = isSelected || isActive ? 1.8 : 1.2;
     canvas.drawRRect(badgeRect, borderPaint);
 
     textPainter.paint(

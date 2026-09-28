@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:infinite_state/main.dart';
+import 'package:infinite_state/ui/canvas/automata_canvas.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -100,4 +101,54 @@ void main() {
     // States cleared: matrix table now shows empty notice
     expect(find.textContaining('No states in machine'), findsOneWidget);
   });
+
+  testWidgets('Connector selection displays floating quick actions pill and inspector details',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1440, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    await tester.pumpWidget(const InfiniteStateApp());
+    await tester.pumpAndSettle();
+
+    final canvasFinder = find.byType(AutomataCanvas);
+    expect(canvasFinder, findsOneWidget);
+
+    final canvasWidget = tester.widget<AutomataCanvas>(canvasFinder);
+    final controller = canvasWidget.controller;
+
+    // Initially no transition selected
+    expect(controller.selectedTransitionId, isNull);
+
+    // Pick first transition (e.g. q0 -> q0 on '0' or q0 -> q1 on '1')
+    final firstTransition = controller.automaton.transitions.first;
+
+    // Select the transition
+    controller.selectTransition(firstTransition.id);
+    await tester.pumpAndSettle();
+
+    // Verify floating quick actions pill appeared on canvas with source -> target label
+    expect(
+      find.textContaining('${firstTransition.fromId} → ${firstTransition.toId}'),
+      findsWidgets,
+    );
+    expect(find.byTooltip('Delete Transition'), findsWidgets);
+
+    // Verify Inspector displays transition properties
+    expect(find.text('Selected Connector'), findsOneWidget);
+    expect(find.text('From'), findsOneWidget);
+    expect(find.text('To'), findsOneWidget);
+
+    // Test toggling '1' (which is not yet on q0 -> q0)
+    expect(firstTransition.symbols.contains('1'), isFalse);
+    final oneChip = find.text('1').first;
+    await tester.tap(oneChip);
+    await tester.pumpAndSettle();
+
+    // Verify '1' is now in the transition symbols
+    final updatedTrans = controller.automaton.transitions
+        .firstWhere((t) => t.id == firstTransition.id);
+    expect(updatedTrans.symbols.contains('1'), isTrue);
+  });
 }
+
