@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:infinite_state/main.dart';
 import 'package:infinite_state/ui/canvas/automata_canvas.dart';
+import 'package:infinite_state/ui/panels/simulation_bar.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -13,18 +14,144 @@ void main() {
     await tester.pumpWidget(const InfiniteStateApp());
     await tester.pumpAndSettle();
 
-    // Verify Title & Toolbar
-    expect(find.text('Infinite State'), findsOneWidget);
-    expect(find.text('Library & Save'), findsOneWidget);
-    expect(find.text('Auto-Layout'), findsOneWidget);
-    expect(find.text('Batch Tests'), findsOneWidget);
+    // Verify Uncapitalized Title & Clean Toolbar
+    expect(find.text('infinite state'), findsOneWidget);
+    expect(find.text('Binary Divisible by 3'), findsOneWidget);
 
-    // Verify Inspector & Matrix
+    // Verify redundant buttons are removed from top bar
+    expect(find.text('Auto-Layout'), findsNothing);
+    expect(find.text('Library & Save'), findsNothing);
+
+    // Verify HUD in lower-left has center and layout switches
+    expect(find.byTooltip('Center Graph on Screen'), findsOneWidget);
+    expect(find.byTooltip('Force-Directed Auto-Layout'), findsOneWidget);
+    expect(find.byTooltip('Hierarchical (Textbook Flow) Layout'), findsOneWidget);
+
+    // Verify Consolidated Right Sidebar Activity Rail
+    expect(find.byTooltip('Inspector & Matrix'), findsOneWidget);
+    expect(find.byTooltip('Batch Testing Suite'), findsOneWidget);
+    expect(find.byTooltip('Library & Presets'), findsOneWidget);
+
+    // Verify Inspector & Matrix is open by default
     expect(find.text('INSPECTOR & MATRIX'), findsOneWidget);
     expect(find.text('Transition Matrix (δ)'), findsOneWidget);
 
-    // Verify Simulation Bar
+    // Verify Simulation Bar with Live mode toggle and no Set button
     expect(find.text('TAPE:'), findsOneWidget);
+    expect(find.text('Live'), findsOneWidget);
+    expect(find.text('Set'), findsNothing);
+  });
+
+  testWidgets('RightSidebar switches seamlessly between Inspector, Batch Tests, and Library',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1280, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    await tester.pumpWidget(const InfiniteStateApp());
+    await tester.pumpAndSettle();
+
+    // Inspector is open initially
+    expect(find.text('INSPECTOR & MATRIX'), findsOneWidget);
+
+    // Tap Batch Testing tab
+    await tester.tap(find.byTooltip('Batch Testing Suite'));
+    await tester.pumpAndSettle();
+
+    // Verify Batch Test panel opened in the same place
+    expect(find.text('BATCH TESTS'), findsOneWidget);
+    expect(find.text('Add'), findsOneWidget);
+    expect(find.text('INSPECTOR & MATRIX'), findsNothing);
+
+    // Tap Library & Presets tab
+    await tester.tap(find.byTooltip('Library & Presets'));
+    await tester.pumpAndSettle();
+
+    // Verify Library panel opened in the same place
+    expect(find.text('LIBRARY & PRESETS'), findsOneWidget);
+    expect(find.text('Saved'), findsOneWidget);
+    expect(find.text('Presets'), findsOneWidget);
+    expect(find.text('JSON'), findsOneWidget);
+    expect(find.text('BATCH TESTS'), findsNothing);
+
+    // Tap Library & Presets tab again to toggle closed
+    await tester.tap(find.byTooltip('Library & Presets'));
+    await tester.pumpAndSettle();
+
+    // Panel is closed, maximizing canvas
+    expect(find.text('LIBRARY & PRESETS'), findsNothing);
+    expect(find.text('INSPECTOR & MATRIX'), findsNothing);
+    expect(find.text('BATCH TESTS'), findsNothing);
+
+    // Reopen Inspector tab
+    await tester.tap(find.byTooltip('Inspector & Matrix'));
+    await tester.pumpAndSettle();
+    expect(find.text('INSPECTOR & MATRIX'), findsOneWidget);
+  });
+
+  testWidgets('Tape input auto-sets on change and Live Mode animates transitions with each key press',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1280, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    await tester.pumpWidget(const InfiniteStateApp());
+    await tester.pumpAndSettle();
+
+    final canvasFinder = find.byType(AutomataCanvas);
+    final canvasWidget = tester.widget<AutomataCanvas>(canvasFinder);
+    final controller = canvasWidget.controller;
+
+    // Initially Binary Divisible by 3 has default input '1001'
+    expect(controller.inputTape, equals('1001'));
+
+    // Find the tape input text field (descendant of SimulationBar)
+    final tapeFieldFinder = find.descendant(
+      of: find.byType(SimulationBar),
+      matching: find.byType(TextField),
+    );
+    expect(tapeFieldFinder, findsOneWidget);
+
+    // 1. Auto-set test (no need to press a "Set" button)
+    await tester.enterText(tapeFieldFinder, '10');
+    await tester.pumpAndSettle();
+
+    // Controller input tape is immediately updated
+    expect(controller.inputTape, equals('10'));
+
+    // 2. Live Mode toggle
+    expect(controller.liveMode, isFalse);
+    final liveButtonFinder = find.text('Live');
+    await tester.tap(liveButtonFinder);
+    await tester.pumpAndSettle();
+    expect(controller.liveMode, isTrue);
+
+    // In Binary Divisible by 3:
+    // Initial state: q0
+    // Input '1': transitions q0 -> q1
+    // Input '10': transitions q1 -> q2
+    // So for '10', the live simulator should be at step 2 with active state q2
+    expect(controller.simulator?.currentStepIndex, equals(2));
+    expect(controller.activeStateIds, equals({'q2'}));
+
+    // Now type an additional character '1' -> input becomes '101'
+    // Transition from q2 on '1': in binary divisible by 3, (2*2 + 1) mod 3 = 5 mod 3 = 2 -> goes to q2
+    await tester.enterText(tapeFieldFinder, '101');
+    await tester.pumpAndSettle();
+
+    expect(controller.inputTape, equals('101'));
+    // Step index advanced automatically on key press
+    expect(controller.simulator?.currentStepIndex, equals(3));
+    expect(controller.activeStateIds, equals({'q2'}));
+
+    // Now backspace to '1' (deleting two characters)
+    await tester.enterText(tapeFieldFinder, '1');
+    await tester.pumpAndSettle();
+
+    expect(controller.inputTape, equals('1'));
+    // Simulation steps back to step 1 (q1)
+    expect(controller.simulator?.currentStepIndex, equals(1));
+    expect(controller.activeStateIds, equals({'q1'}));
   });
 
   testWidgets('Transition matrix allows inline cell editing without modal dialogs',

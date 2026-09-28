@@ -3,7 +3,7 @@ import 'package:flutter/services.dart';
 import '../state/studio_controller.dart';
 import 'canvas/automata_canvas.dart';
 import 'canvas/canvas_hud.dart';
-import 'panels/inspector_panel.dart';
+import 'panels/right_sidebar.dart';
 import 'panels/simulation_bar.dart';
 import 'panels/toolbar.dart';
 
@@ -72,8 +72,8 @@ class _StudioPageState extends State<StudioPage> {
                       ),
                     ),
 
-                    // Inspector & Transition Matrix Sidebar
-                    InspectorPanel(controller: _controller),
+                    // Consolidated Toggle-able Right Sidebar
+                    RightSidebar(controller: _controller),
                   ],
                 ),
               ),
