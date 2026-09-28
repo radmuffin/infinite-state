@@ -6,16 +6,46 @@ import '../../core/presets/example_automata.dart';
 import '../../core/storage/machine_storage.dart';
 import '../../state/studio_controller.dart';
 
-class SaveLoadDialog extends StatefulWidget {
+class SaveLoadDialog extends StatelessWidget {
   final StudioController controller;
 
   const SaveLoadDialog({super.key, required this.controller});
 
   @override
-  State<SaveLoadDialog> createState() => _SaveLoadDialogState();
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: const Color(0xFF13161F),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: const BorderSide(color: Color(0xFF282D3D), width: 1.5),
+      ),
+      child: SizedBox(
+        width: 600,
+        height: 520,
+        child: SaveLoadView(
+          controller: controller,
+          onClose: () => Navigator.of(context).pop(),
+        ),
+      ),
+    );
+  }
 }
 
-class _SaveLoadDialogState extends State<SaveLoadDialog>
+class SaveLoadView extends StatefulWidget {
+  final StudioController controller;
+  final VoidCallback? onClose;
+
+  const SaveLoadView({
+    super.key,
+    required this.controller,
+    this.onClose,
+  });
+
+  @override
+  State<SaveLoadView> createState() => _SaveLoadViewState();
+}
+
+class _SaveLoadViewState extends State<SaveLoadView>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
   late TextEditingController _nameController;
@@ -57,57 +87,76 @@ class _SaveLoadDialogState extends State<SaveLoadDialog>
 
   @override
   Widget build(BuildContext context) {
-    return Dialog(
-      backgroundColor: const Color(0xFF13161F),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: const BorderSide(color: Color(0xFF282D3D), width: 1.5),
-      ),
-      child: Container(
-        width: 600,
-        height: 520,
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          children: [
-            // Title Header
-            Row(
+    return Container(
+      color: const Color(0xFF13161F),
+      child: Column(
+        children: [
+          // Header
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            decoration: const BoxDecoration(
+              border: Border(
+                bottom: BorderSide(color: Color(0xFF232838), width: 1),
+              ),
+            ),
+            child: Row(
               children: [
                 const Icon(Icons.folder_special,
-                    color: Color(0xFF818CF8), size: 22),
-                const SizedBox(width: 10),
-                const Text(
-                  'Machine Library & Persistence',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF818CF8), size: 18),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: Text(
+                    'LIBRARY & PRESETS',
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1.0,
+                    ),
                   ),
                 ),
-                const Spacer(),
-                IconButton(
-                  icon: const Icon(Icons.close, size: 20),
-                  color: const Color(0xFF94A3B8),
-                  onPressed: () => Navigator.of(context).pop(),
-                ),
+                if (widget.onClose != null)
+                  IconButton(
+                    icon: const Icon(Icons.close, size: 16),
+                    tooltip: 'Close Panel',
+                    color: const Color(0xFF94A3B8),
+                    padding: EdgeInsets.zero,
+                    constraints:
+                        const BoxConstraints(minWidth: 24, minHeight: 24),
+                    onPressed: widget.onClose,
+                  ),
               ],
             ),
+          ),
 
-            // Tab Bar
-            TabBar(
+          // Tab Bar
+          Container(
+            decoration: const BoxDecoration(
+              border: Border(
+                bottom: BorderSide(color: Color(0xFF232838), width: 1),
+              ),
+            ),
+            child: TabBar(
               controller: _tabController,
               labelColor: const Color(0xFF00E5FF),
               unselectedLabelColor: const Color(0xFF94A3B8),
               indicatorColor: const Color(0xFF00E5FF),
+              labelStyle:
+                  const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold),
+              unselectedLabelStyle: const TextStyle(fontSize: 11.5),
               tabs: const [
-                Tab(text: 'My Saved Machines'),
-                Tab(text: 'Textbook Presets'),
-                Tab(text: 'Import / Export JSON'),
+                Tab(text: 'Saved'),
+                Tab(text: 'Presets'),
+                Tab(text: 'JSON'),
               ],
             ),
-            const SizedBox(height: 14),
+          ),
 
-            // Tab Views
-            Expanded(
+          // Tab Views
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.all(12.0),
               child: TabBarView(
                 controller: _tabController,
                 children: [
@@ -117,8 +166,8 @@ class _SaveLoadDialogState extends State<SaveLoadDialog>
                 ],
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

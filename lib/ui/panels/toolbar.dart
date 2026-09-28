@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
 import '../../state/studio_controller.dart';
-import 'batch_test_dialog.dart';
-import 'save_load_dialog.dart';
 
 class StudioToolbar extends StatefulWidget {
   final StudioController controller;
@@ -54,295 +52,202 @@ class _StudioToolbarState extends State<StudioToolbar> {
       builder: (context, _) {
         final isDfa = widget.controller.automaton.isDfa;
         final hasEpsilon = widget.controller.automaton.hasEpsilonTransitions;
+        final isSidebarOpen =
+            widget.controller.activeSidebarTab != SidebarTab.none;
 
         return Container(
-          height: 52,
-          padding: const EdgeInsets.symmetric(horizontal: 16.0),
+          height: 48,
+          padding: const EdgeInsets.symmetric(horizontal: 14.0),
           decoration: const BoxDecoration(
             color: Color(0xFF11141D),
             border: Border(
-              bottom: BorderSide(color: Color(0xFF222738), width: 1.5),
+              bottom: BorderSide(color: Color(0xFF1E2333), width: 1.2),
             ),
           ),
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: [
-                // Logo
-                Container(
-                  width: 30,
-                  height: 30,
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [Color(0xFF6366F1), Color(0xFF00E5FF)],
-                    ),
-                    borderRadius: BorderRadius.circular(8),
-                    boxShadow: [
-                      BoxShadow(
-                        color: const Color(0xFF6366F1).withValues(alpha: 0.35),
-                        blurRadius: 8,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  alignment: Alignment.center,
-                  child: const Text(
-                    '∞',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                const Text(
-                  'Infinite State',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 15,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 0.5,
-                  ),
-                ),
-
-                const SizedBox(width: 14),
-
-                // Editable Machine Title Pill
-                _buildMachineTitlePill(context),
-
-                const SizedBox(width: 10),
-
-                // Classification Badge
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: isDfa
-                        ? const Color(0xFF064E3B)
-                        : const Color(0xFF312E81),
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(
-                      color: isDfa
-                          ? const Color(0xFF10B981)
-                          : const Color(0xFF818CF8),
-                      width: 1,
-                    ),
-                  ),
-                  child: Text(
-                    isDfa ? 'DFA' : (hasEpsilon ? 'ε-NFA' : 'NFA'),
-                    style: TextStyle(
-                      color: isDfa
-                          ? const Color(0xFF6EE7B7)
-                          : const Color(0xFFA5B4FC),
-                      fontSize: 11,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-
-                const SizedBox(width: 24),
-
-                // Save & Library Button
-                ElevatedButton.icon(
-                  onPressed: () {
-                    showDialog(
-                      context: context,
-                      builder: (ctx) => SaveLoadDialog(controller: widget.controller),
-                    );
-                  },
-                  icon: const Icon(Icons.folder_open, size: 16),
-                  label: const Text('Library & Save',
-                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF1E2433),
-                    foregroundColor: const Color(0xFF93C5FD),
-                    side: const BorderSide(color: Color(0xFF313B54)),
-                    shape: RoundedRectangleBorder(
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              // Left Group: Subdued lowercase brandmark, machine title pill, and type badge
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Minimalist glyph & subtle uncapitalized title
+                  Container(
+                    width: 22,
+                    height: 22,
+                    decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(6),
+                      border: Border.all(
+                          color: const Color(0xFF313B54), width: 1),
+                      color: const Color(0xFF161B28),
                     ),
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 8),
+                    alignment: Alignment.center,
+                    child: const Text(
+                      '∞',
+                      style: TextStyle(
+                        color: Color(0xFF818CF8),
+                        fontSize: 13,
+                        fontWeight: FontWeight.w400,
+                        height: 1.0,
+                      ),
+                    ),
                   ),
-                ),
+                  const SizedBox(width: 8),
+                  const Text(
+                    'infinite state',
+                    style: TextStyle(
+                      color: Color(0xFF94A3B8),
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 0.6,
+                      fontFamily: 'monospace',
+                    ),
+                  ),
 
-                const SizedBox(width: 10),
+                  Container(
+                    width: 1,
+                    height: 16,
+                    margin: const EdgeInsets.symmetric(horizontal: 14),
+                    color: const Color(0xFF262C3E),
+                  ),
 
-                // Auto-Layout Dropdown
-                PopupMenuButton<String>(
-                  tooltip: 'Auto-Layout Algorithms',
-                  color: const Color(0xFF1E222D),
-                  icon: const Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.auto_awesome,
-                          size: 16, color: Color(0xFFA5B4FC)),
-                      SizedBox(width: 5),
-                      Text(
-                        'Auto-Layout',
-                        style: TextStyle(
-                          color: Color(0xFFCBD5E1),
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500,
+                  // Editable Machine Title Pill
+                  _buildMachineTitlePill(context),
+
+                  const SizedBox(width: 10),
+
+                  // Classification Badge
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                    decoration: BoxDecoration(
+                      color: isDfa
+                          ? const Color(0xFF064E3B)
+                          : const Color(0xFF312E81),
+                      borderRadius: BorderRadius.circular(5),
+                      border: Border.all(
+                        color: isDfa
+                            ? const Color(0xFF10B981)
+                            : const Color(0xFF818CF8),
+                        width: 1,
+                      ),
+                    ),
+                    child: Text(
+                      isDfa ? 'DFA' : (hasEpsilon ? 'ε-NFA' : 'NFA'),
+                      style: TextStyle(
+                        color: isDfa
+                            ? const Color(0xFF6EE7B7)
+                            : const Color(0xFFA5B4FC),
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+
+              // Right Group: Undo, Clear All, and Sidebar Toggle
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Undo Button
+                  IconButton(
+                    icon: const Icon(Icons.undo, size: 18),
+                    tooltip: 'Undo',
+                    color: const Color(0xFF94A3B8),
+                    padding: const EdgeInsets.all(6),
+                    constraints: const BoxConstraints(),
+                    onPressed: widget.controller.undo,
+                  ),
+
+                  const SizedBox(width: 8),
+
+                  // Clear All Button with Anchored Dropdown Menu
+                  PopupMenuButton<String>(
+                    tooltip: 'Clear All States',
+                    icon: const Icon(Icons.delete_sweep,
+                        size: 19, color: Color(0xFFF87171)),
+                    color: const Color(0xFF1E222D),
+                    padding: const EdgeInsets.all(6),
+                    constraints: const BoxConstraints(),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      side: const BorderSide(color: Color(0xFF334155)),
+                    ),
+                    onSelected: (val) {
+                      if (val == 'clear') {
+                        widget.controller.clearAutomaton();
+                      }
+                    },
+                    itemBuilder: (context) => [
+                      PopupMenuItem(
+                        enabled: false,
+                        height: 36,
+                        child: Text(
+                          'Clear all states & transitions?\n(You can undo anytime)',
+                          style:
+                              TextStyle(color: Colors.grey.shade400, fontSize: 11),
                         ),
                       ),
-                      Icon(Icons.arrow_drop_down,
-                          size: 16, color: Color(0xFF94A3B8)),
+                      const PopupMenuDivider(height: 1),
+                      const PopupMenuItem(
+                        value: 'clear',
+                        height: 36,
+                        child: Row(
+                          children: [
+                            Icon(Icons.delete_forever,
+                                size: 18, color: Color(0xFFEF4444)),
+                            SizedBox(width: 8),
+                            Text(
+                              'Clear Canvas',
+                              style: TextStyle(
+                                color: Color(0xFFEF4444),
+                                fontSize: 13,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     ],
                   ),
-                  onSelected: (val) {
-                    if (val == 'force') {
-                      widget.controller.applyForceDirectedLayout();
-                    } else if (val == 'sugiyama') {
-                      widget.controller.applySugiyamaLayout();
-                    }
-                  },
-                  itemBuilder: (context) => [
-                    const PopupMenuItem(
-                      value: 'force',
-                      child: Row(
-                        children: [
-                          Icon(Icons.hub, size: 18, color: Color(0xFF00E5FF)),
-                          SizedBox(width: 10),
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Force-Directed (Spring)',
-                                style: TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.bold),
-                              ),
-                              Text(
-                                'Physical repulsion & spring tension',
-                                style: TextStyle(
-                                    color: Color(0xFF94A3B8), fontSize: 11),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                    const PopupMenuItem(
-                      value: 'sugiyama',
-                      child: Row(
-                        children: [
-                          Icon(Icons.account_tree,
-                              size: 18, color: Color(0xFF818CF8)),
-                          SizedBox(width: 10),
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Hierarchical (Textbook Flow)',
-                                style: TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.bold),
-                              ),
-                              Text(
-                                'Left-to-right topological layering',
-                                style: TextStyle(
-                                    color: Color(0xFF94A3B8), fontSize: 11),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
 
-                const SizedBox(width: 16),
+                  const SizedBox(width: 8),
 
-                // Batch Test Runner
-                OutlinedButton.icon(
-                  onPressed: () {
-                    showDialog(
-                      context: context,
-                      builder: (ctx) =>
-                          BatchTestDialog(controller: widget.controller),
-                    );
-                  },
-                  icon: const Icon(Icons.playlist_add_check, size: 17),
-                  label: const Text('Batch Tests',
-                      style: TextStyle(fontSize: 12)),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: const Color(0xFF00E5FF),
-                    side: const BorderSide(color: Color(0xFF0E7490)),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 8),
+                  Container(
+                    width: 1,
+                    height: 16,
+                    margin: const EdgeInsets.symmetric(horizontal: 4),
+                    color: const Color(0xFF262C3E),
                   ),
-                ),
 
-                const SizedBox(width: 10),
+                  const SizedBox(width: 4),
 
-                // Center View Button
-                IconButton(
-                  icon: const Icon(Icons.center_focus_strong, size: 19),
-                  tooltip: 'Center Graph on Screen',
-                  color: const Color(0xFF94A3B8),
-                  onPressed: widget.controller.triggerCenterView,
-                ),
-
-                // Undo Button
-                IconButton(
-                  icon: const Icon(Icons.undo, size: 19),
-                  tooltip: 'Undo',
-                  color: const Color(0xFF94A3B8),
-                  onPressed: widget.controller.undo,
-                ),
-
-                // Clear All Button with Anchored Dropdown Menu
-                PopupMenuButton<String>(
-                  tooltip: 'Clear All States',
-                  icon: const Icon(Icons.delete_sweep, size: 20, color: Color(0xFFF87171)),
-                  color: const Color(0xFF1E222D),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    side: const BorderSide(color: Color(0xFF334155)),
+                  // Right Sidebar Toggle Button
+                  IconButton(
+                    icon: Icon(
+                      isSidebarOpen
+                          ? Icons.view_sidebar
+                          : Icons.view_sidebar_outlined,
+                      size: 18,
+                    ),
+                    tooltip: isSidebarOpen ? 'Collapse Panels' : 'Expand Panels',
+                    color: isSidebarOpen
+                        ? const Color(0xFF00E5FF)
+                        : const Color(0xFF94A3B8),
+                    padding: const EdgeInsets.all(6),
+                    constraints: const BoxConstraints(),
+                    onPressed: () {
+                      if (isSidebarOpen) {
+                        widget.controller.setSidebarTab(SidebarTab.none);
+                      } else {
+                        widget.controller.setSidebarTab(SidebarTab.inspector);
+                      }
+                    },
                   ),
-                  onSelected: (val) {
-                    if (val == 'clear') {
-                      widget.controller.clearAutomaton();
-                    }
-                  },
-                  itemBuilder: (context) => [
-                    PopupMenuItem(
-                      enabled: false,
-                      height: 36,
-                      child: Text(
-                        'Clear all states & transitions?\n(You can undo anytime)',
-                        style: TextStyle(color: Colors.grey.shade400, fontSize: 11),
-                      ),
-                    ),
-                    const PopupMenuDivider(height: 1),
-                    const PopupMenuItem(
-                      value: 'clear',
-                      height: 36,
-                      child: Row(
-                        children: [
-                          Icon(Icons.delete_forever, size: 18, color: Color(0xFFEF4444)),
-                          SizedBox(width: 8),
-                          Text(
-                            'Clear Canvas',
-                            style: TextStyle(
-                              color: Color(0xFFEF4444),
-                              fontSize: 13,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
+                ],
+              ),
+            ],
           ),
         );
       },

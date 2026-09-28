@@ -17,11 +17,22 @@ class _SimulationBarState extends State<SimulationBar> {
   void initState() {
     super.initState();
     _textController = TextEditingController(text: widget.controller.inputTape);
+    widget.controller.addListener(_onControllerChange);
+  }
+
+  void _onControllerChange() {
+    if (widget.controller.inputTape != _textController.text) {
+      _textController.text = widget.controller.inputTape;
+    }
   }
 
   @override
   void didUpdateWidget(covariant SimulationBar oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller != widget.controller) {
+      oldWidget.controller.removeListener(_onControllerChange);
+      widget.controller.addListener(_onControllerChange);
+    }
     if (widget.controller.inputTape != _textController.text) {
       _textController.text = widget.controller.inputTape;
     }
@@ -127,9 +138,9 @@ class _SimulationBarState extends State<SimulationBar> {
               // 2. Control Bar (Input, Buttons, Timeline)
               Row(
                 children: [
-                  // Tape Input field
+                  // Tape Input field with auto-set
                   SizedBox(
-                    width: 180,
+                    width: 170,
                     height: 36,
                     child: TextField(
                       controller: _textController,
@@ -142,7 +153,7 @@ class _SimulationBarState extends State<SimulationBar> {
                         isDense: true,
                         contentPadding: const EdgeInsets.symmetric(
                             horizontal: 10, vertical: 8),
-                        hintText: 'Input tape string...',
+                        hintText: 'Type input tape...',
                         hintStyle:
                             const TextStyle(color: Color(0xFF64748B), fontSize: 12),
                         filled: true,
@@ -156,24 +167,66 @@ class _SimulationBarState extends State<SimulationBar> {
                           borderSide: const BorderSide(color: Color(0xFF6366F1)),
                         ),
                       ),
+                      onChanged: (val) => widget.controller.setInputTape(val),
                       onSubmitted: (val) => widget.controller.setInputTape(val),
                     ),
                   ),
-                  const SizedBox(width: 6),
-                  ElevatedButton(
-                    onPressed: () =>
-                        widget.controller.setInputTape(_textController.text),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF312E81),
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 8),
-                      minimumSize: const Size(0, 36),
-                      shape: RoundedRectangleBorder(
+
+                  const SizedBox(width: 8),
+
+                  // Live Mode Keystroke Toggle Button
+                  InkWell(
+                    onTap: widget.controller.toggleLiveMode,
+                    borderRadius: BorderRadius.circular(6),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 180),
+                      height: 36,
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                      decoration: BoxDecoration(
+                        color: widget.controller.liveMode
+                            ? const Color(0xFF0E7490).withValues(alpha: 0.35)
+                            : const Color(0xFF1E222D),
                         borderRadius: BorderRadius.circular(6),
+                        border: Border.all(
+                          color: widget.controller.liveMode
+                              ? const Color(0xFF00E5FF)
+                              : const Color(0xFF334155),
+                          width: 1.2,
+                        ),
+                        boxShadow: widget.controller.liveMode
+                            ? [
+                                BoxShadow(
+                                  color: const Color(0xFF00E5FF)
+                                      .withValues(alpha: 0.2),
+                                  blurRadius: 6,
+                                ),
+                              ]
+                            : null,
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.bolt,
+                            size: 16,
+                            color: widget.controller.liveMode
+                                ? const Color(0xFF00E5FF)
+                                : const Color(0xFF64748B),
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            'Live',
+                            style: TextStyle(
+                              color: widget.controller.liveMode
+                                  ? const Color(0xFF00E5FF)
+                                  : const Color(0xFF94A3B8),
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                    child: const Text('Set', style: TextStyle(fontSize: 12)),
                   ),
 
                   const SizedBox(width: 16),
@@ -332,6 +385,7 @@ class _SimulationBarState extends State<SimulationBar> {
 
   @override
   void dispose() {
+    widget.controller.removeListener(_onControllerChange);
     _textController.dispose();
     super.dispose();
   }

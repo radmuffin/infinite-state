@@ -4,8 +4,9 @@ import '../../state/studio_controller.dart';
 
 class InspectorPanel extends StatefulWidget {
   final StudioController controller;
+  final VoidCallback? onClose;
 
-  const InspectorPanel({super.key, required this.controller});
+  const InspectorPanel({super.key, required this.controller, this.onClose});
 
   @override
   State<InspectorPanel> createState() => _InspectorPanelState();
@@ -78,13 +79,29 @@ class _InspectorPanelState extends State<InspectorPanel> {
                     ),
                     if (selectedState != null || selectedTransition != null)
                       IconButton(
-                        icon: const Icon(Icons.close, size: 16),
+                        icon: const Icon(Icons.deselect, size: 15),
+                        tooltip: 'Clear Selection',
                         color: const Color(0xFF94A3B8),
+                        padding: EdgeInsets.zero,
+                        constraints:
+                            const BoxConstraints(minWidth: 24, minHeight: 24),
                         onPressed: () {
                           widget.controller.selectState(null);
                           widget.controller.selectTransition(null);
                         },
                       ),
+                    if (widget.onClose != null) ...[
+                      const SizedBox(width: 4),
+                      IconButton(
+                        icon: const Icon(Icons.close, size: 16),
+                        tooltip: 'Close Panel',
+                        color: const Color(0xFF94A3B8),
+                        padding: EdgeInsets.zero,
+                        constraints:
+                            const BoxConstraints(minWidth: 24, minHeight: 24),
+                        onPressed: widget.onClose,
+                      ),
+                    ],
                   ],
                 ),
               ),

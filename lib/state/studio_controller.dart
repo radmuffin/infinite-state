@@ -25,6 +25,14 @@ class BatchTestResult {
   }) : passed = expected == actual;
 }
 
+enum SidebarTab {
+  none,
+  inspector,
+  regex,
+  batchTests,
+  library,
+}
+
 class StudioController extends ChangeNotifier {
   String _machineName = 'Binary Divisible by 3';
   String? _currentMachineId;
@@ -43,6 +51,10 @@ class StudioController extends ChangeNotifier {
 
   String? _selectedStateId;
   String? _selectedTransitionId;
+
+  // Active right sidebar tab & Live mode
+  SidebarTab _activeSidebarTab = SidebarTab.inspector;
+  bool _liveMode = false;
 
   // Quick connect wire drag
   String? _wireSourceStateId;
@@ -82,6 +94,40 @@ class StudioController extends ChangeNotifier {
   bool get isPlaying => _isPlaying;
   Duration get playbackSpeed => _playbackSpeed;
   int get centerViewTrigger => _centerViewTrigger;
+  SidebarTab get activeSidebarTab => _activeSidebarTab;
+  bool get liveMode => _liveMode;
+
+  void setSidebarTab(SidebarTab tab) {
+    _activeSidebarTab = tab;
+    notifyListeners();
+  }
+
+  void toggleSidebarTab(SidebarTab tab) {
+    if (_activeSidebarTab == tab) {
+      _activeSidebarTab = SidebarTab.none;
+    } else {
+      _activeSidebarTab = tab;
+    }
+    notifyListeners();
+  }
+
+  void toggleLiveMode() {
+    _liveMode = !_liveMode;
+    if (_liveMode && _simulator != null) {
+      _simulator!.runToEnd();
+    }
+    notifyListeners();
+  }
+
+  void setLiveMode(bool enabled) {
+    if (_liveMode != enabled) {
+      _liveMode = enabled;
+      if (_liveMode && _simulator != null) {
+        _simulator!.runToEnd();
+      }
+      notifyListeners();
+    }
+  }
 
   // --- Regex Synchronization Getters ---
   String get regexPattern => _regexPattern;
@@ -621,6 +667,9 @@ class StudioController extends ChangeNotifier {
   void setInputTape(String tape) {
     _inputTape = tape;
     _initSimulator(syncRegex: false);
+    if (_liveMode && _simulator != null) {
+      _simulator!.runToEnd();
+    }
     notifyListeners();
   }
 
