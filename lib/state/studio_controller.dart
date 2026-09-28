@@ -45,6 +45,7 @@ class StudioController extends ChangeNotifier {
   String? _regexError;
   bool _isGraphOutOfSyncWithRegex = false;
   bool _isSyncing = false;
+  RegexCompileMode _regexCompileMode = RegexCompileMode.minimalDfa;
 
   // Explicit alphabet symbols added by user (in addition to transitions)
   final Set<String> _explicitAlphabet = {'0', '1'};
@@ -157,6 +158,7 @@ class StudioController extends ChangeNotifier {
   bool get regexAutoSync => _regexAutoSync;
   String? get regexError => _regexError;
   bool get isGraphOutOfSyncWithRegex => _isGraphOutOfSyncWithRegex;
+  RegexCompileMode get regexCompileMode => _regexCompileMode;
 
   /// Combined alphabet from transitions plus any explicitly added symbols.
   Set<String> get fullAlphabet {
@@ -807,13 +809,26 @@ class StudioController extends ChangeNotifier {
     }
   }
 
-  /// Compiles current [_regexPattern] to an [Automaton] via Thompson's Construction
+  /// Sets the regex compilation strategy ([RegexCompileMode.minimalDfa] vs [RegexCompileMode.thompsonNfa]).
+  /// If [recompile] is true and a non-empty regex pattern is set, immediately syncs to graph.
+  void setRegexCompileMode(RegexCompileMode mode, {bool recompile = true}) {
+    if (_regexCompileMode == mode) return;
+    _regexCompileMode = mode;
+    if (recompile && _regexPattern.trim().isNotEmpty) {
+      syncRegexToGraph();
+    } else {
+      notifyListeners();
+    }
+  }
+
+  /// Compiles current [_regexPattern] to an [Automaton] using [_regexCompileMode]
   /// and updates the canvas state with hierarchical auto-layout.
   void syncRegexToGraph() {
     _isSyncing = true;
     try {
       final newAutomaton = RegexService.regexToAutomaton(
         _regexPattern,
+        mode: _regexCompileMode,
         applyLayout: true,
       );
       _recordHistory();

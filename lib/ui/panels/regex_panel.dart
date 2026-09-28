@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../../core/regex/regex_service.dart';
 import '../../state/studio_controller.dart';
 
 /// Right-sidebar panel for formal bidirectional Regular Expression synchronization.
@@ -160,7 +161,12 @@ class _RegexPanelState extends State<RegexPanel> {
                     // Status & Mode Banner
                     _buildStatusBanner(hasError, isOutOfSync, autoSync),
 
-                    const SizedBox(height: 14),
+                    const SizedBox(height: 12),
+
+                    // Compilation Target Mode Selector
+                    _buildCompileModeSelector(),
+
+                    const SizedBox(height: 12),
 
                     // Expression Card
                     _buildExpressionCard(hasError),
@@ -253,6 +259,150 @@ class _RegexPanelState extends State<RegexPanel> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildCompileModeSelector() {
+    final currentMode = widget.controller.regexCompileMode;
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1A1F2C),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFF2A3246)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'COMPILATION TARGET',
+                  style: TextStyle(
+                    color: Color(0xFF94A3B8),
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 0.8,
+                  ),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: currentMode == RegexCompileMode.minimalDfa
+                      ? const Color(0xFF00E5FF).withValues(alpha: 0.15)
+                      : const Color(0xFFF59E0B).withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  currentMode == RegexCompileMode.minimalDfa
+                      ? '0 ε-transitions'
+                      : 'ε-NFA (Raw)',
+                  style: TextStyle(
+                    color: currentMode == RegexCompileMode.minimalDfa
+                        ? const Color(0xFF00E5FF)
+                        : const Color(0xFFFCD34D),
+                    fontSize: 9.5,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: _buildModeOption(
+                  mode: RegexCompileMode.minimalDfa,
+                  icon: Icons.bolt,
+                  title: 'Minimal DFA',
+                  subtitle: 'Compact & clean',
+                  isSelected: currentMode == RegexCompileMode.minimalDfa,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _buildModeOption(
+                  mode: RegexCompileMode.thompsonNfa,
+                  icon: Icons.account_tree_outlined,
+                  title: 'Textbook ε-NFA',
+                  subtitle: 'Thompson steps',
+                  isSelected: currentMode == RegexCompileMode.thompsonNfa,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildModeOption({
+    required RegexCompileMode mode,
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required bool isSelected,
+  }) {
+    return InkWell(
+      onTap: () {
+        widget.controller.setRegexCompileMode(mode);
+      },
+      borderRadius: BorderRadius.circular(6),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? const Color(0xFF00E5FF).withValues(alpha: 0.12)
+              : const Color(0xFF131722),
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(
+            color: isSelected ? const Color(0xFF00E5FF) : const Color(0xFF2A344A),
+            width: isSelected ? 1.4 : 1.0,
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  icon,
+                  size: 13,
+                  color: isSelected ? const Color(0xFF00E5FF) : const Color(0xFF94A3B8),
+                ),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: isSelected ? Colors.white : const Color(0xFF94A3B8),
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 2),
+            Text(
+              subtitle,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: isSelected
+                    ? const Color(0xFF00E5FF).withValues(alpha: 0.8)
+                    : const Color(0xFF64748B),
+                fontSize: 9.5,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
