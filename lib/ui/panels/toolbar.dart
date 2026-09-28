@@ -153,11 +153,27 @@ class _StudioToolbarState extends State<StudioToolbar> {
                   // Undo Button
                   IconButton(
                     icon: const Icon(Icons.undo, size: 18),
-                    tooltip: 'Undo',
-                    color: const Color(0xFF94A3B8),
+                    tooltip: 'Undo (Ctrl+Z)',
+                    color: widget.controller.canUndo
+                        ? const Color(0xFF94A3B8)
+                        : const Color(0xFF475569),
                     padding: const EdgeInsets.all(6),
                     constraints: const BoxConstraints(),
-                    onPressed: widget.controller.undo,
+                    onPressed: widget.controller.canUndo ? widget.controller.undo : null,
+                  ),
+
+                  const SizedBox(width: 4),
+
+                  // Redo Button
+                  IconButton(
+                    icon: const Icon(Icons.redo, size: 18),
+                    tooltip: 'Redo (Ctrl+Shift+Z)',
+                    color: widget.controller.canRedo
+                        ? const Color(0xFF94A3B8)
+                        : const Color(0xFF475569),
+                    padding: const EdgeInsets.all(6),
+                    constraints: const BoxConstraints(),
+                    onPressed: widget.controller.canRedo ? widget.controller.redo : null,
                   ),
 
                   const SizedBox(width: 8),

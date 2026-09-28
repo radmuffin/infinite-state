@@ -1,6 +1,28 @@
 import 'dart:math';
 import 'dart:ui';
 
+class EdgeGeometry {
+  final Path path;
+  final Offset labelPosition;
+  final Offset arrowTip;
+  final double arrowDirection;
+  final bool isCurved;
+  final Offset? curveStart;
+  final Offset? controlPoint;
+  final Offset? curveEnd;
+
+  const EdgeGeometry({
+    required this.path,
+    required this.labelPosition,
+    required this.arrowTip,
+    required this.arrowDirection,
+    this.isCurved = false,
+    this.curveStart,
+    this.controlPoint,
+    this.curveEnd,
+  });
+}
+
 class TransitionGeometry {
   static const double nodeRadius = 30.0;
   static const double arrowLength = 12.0;
@@ -8,27 +30,24 @@ class TransitionGeometry {
 
   /// Computes the path for a directed transition from [start] to [end].
   /// If [hasReciprocal] is true, curves the line outward with [curveOffset].
-  static ({
-    Path path,
-    Offset labelPosition,
-    Offset arrowTip,
-    double arrowDirection,
-  }) calculateEdge({
+  static EdgeGeometry calculateEdge({
     required Offset start,
     required Offset end,
     required bool hasReciprocal,
     double curveOffset = 36.0,
+    List<Offset>? obstacles,
   }) {
     final delta = end - start;
     final distance = delta.distance;
 
     if (distance < 1.0) {
       // Degenerate case fallback
-      return (
+      return EdgeGeometry(
         path: Path(),
         labelPosition: start,
         arrowTip: end,
         arrowDirection: 0.0,
+        isCurved: false,
       );
     }
 
@@ -36,7 +55,55 @@ class TransitionGeometry {
     // Perpendicular normal vector (rotated 90 degrees counterclockwise)
     final normal = Offset(-unit.dy, unit.dx);
 
+    bool shouldCurve = hasReciprocal;
+    double effectiveCurveOffset = curveOffset;
+
     if (!hasReciprocal) {
+      // Check for collision with intermediate state nodes (obstacles)
+      Offset? collidedObstacle;
+      double minPerpDist = double.infinity;
+      double obstacleSide = 1.0;
+
+      if (obstacles != null && obstacles.isNotEmpty) {
+        for (final obs in obstacles) {
+          // Ignore start and end nodes
+          if ((obs - start).distance < 10.0 || (obs - end).distance < 10.0) {
+            continue;
+          }
+
+          // Projection along unit vector
+          final proj = (obs.dx - start.dx) * unit.dx + (obs.dy - start.dy) * unit.dy;
+          // Only check obstacles situated between start and end
+          if (proj > nodeRadius && proj < distance - nodeRadius) {
+            // Perpendicular signed distance to the segment line
+            final perp = (obs.dx - start.dx) * normal.dx + (obs.dy - start.dy) * normal.dy;
+            if (perp.abs() < nodeRadius + 20.0) {
+              if (perp.abs() < minPerpDist) {
+                minPerpDist = perp.abs();
+                collidedObstacle = obs;
+                obstacleSide = perp >= 0 ? 1.0 : -1.0;
+              }
+            }
+          }
+        }
+      }
+
+      if (collidedObstacle != null) {
+        shouldCurve = true;
+        // Curve away from the obstacle
+        final directionFactor = obstacleSide > 0 ? -1.0 : 1.0;
+        final clearance = max(55.0, (nodeRadius * 2.0 + 20.0) - minPerpDist + 25.0);
+        effectiveCurveOffset = directionFactor * clearance;
+      } else if (end.dx < start.dx - 15.0) {
+        // Textbook back-edge in left-to-right layout: arch cleanly underneath
+        shouldCurve = true;
+        final span = (start.dx - end.dx).abs();
+        final archMagnitude = (45.0 + 0.12 * span).clamp(50.0, 95.0);
+        effectiveCurveOffset = -archMagnitude;
+      }
+    }
+
+    if (!shouldCurve) {
       // Straight line from node perimeter to node perimeter
       final lineStart = start + unit * nodeRadius;
       final lineEnd = end - unit * nodeRadius;
@@ -48,25 +115,28 @@ class TransitionGeometry {
       final labelPos = (lineStart + lineEnd) / 2 + normal * 14.0;
       final direction = atan2(unit.dy, unit.dx);
 
-      return (
+      return EdgeGeometry(
         path: path,
         labelPosition: labelPos,
         arrowTip: lineEnd,
         arrowDirection: direction,
+        isCurved: false,
       );
     } else {
       // Curved quadratic Bézier
       final midPoint = (start + end) / 2;
-      final controlPoint = midPoint + normal * curveOffset;
+      final controlPoint = midPoint + normal * effectiveCurveOffset;
 
       // Start on perimeter towards control point
       final startToCtrl = controlPoint - start;
-      final startUnit = startToCtrl / startToCtrl.distance;
+      final startDist = startToCtrl.distance;
+      final startUnit = startDist > 0.001 ? startToCtrl / startDist : unit;
       final curveStart = start + startUnit * nodeRadius;
 
       // End on perimeter from control point
       final ctrlToEnd = end - controlPoint;
-      final endUnit = ctrlToEnd / ctrlToEnd.distance;
+      final endDist = ctrlToEnd.distance;
+      final endUnit = endDist > 0.001 ? ctrlToEnd / endDist : unit;
       final curveEnd = end - endUnit * nodeRadius;
 
       final path = Path()
@@ -79,29 +149,29 @@ class TransitionGeometry {
         );
 
       // Label at peak of quadratic curve (t = 0.5)
+      final normalSign = effectiveCurveOffset >= 0 ? 1.0 : -1.0;
       final labelPos = Offset(
         0.25 * curveStart.dx + 0.5 * controlPoint.dx + 0.25 * curveEnd.dx,
         0.25 * curveStart.dy + 0.5 * controlPoint.dy + 0.25 * curveEnd.dy,
-      ) + normal * 12.0;
+      ) + normal * (normalSign * 12.0);
 
       final direction = atan2(endUnit.dy, endUnit.dx);
 
-      return (
+      return EdgeGeometry(
         path: path,
         labelPosition: labelPos,
         arrowTip: curveEnd,
         arrowDirection: direction,
+        isCurved: true,
+        curveStart: curveStart,
+        controlPoint: controlPoint,
+        curveEnd: curveEnd,
       );
     }
   }
 
   /// Computes a self-loop path arching above [center].
-  static ({
-    Path path,
-    Offset labelPosition,
-    Offset arrowTip,
-    double arrowDirection,
-  }) calculateSelfLoop({
+  static EdgeGeometry calculateSelfLoop({
     required Offset center,
     double loopRadius = 32.0,
   }) {
@@ -132,11 +202,12 @@ class TransitionGeometry {
     final incomingVector = endPoint - cp2;
     final direction = atan2(incomingVector.dy, incomingVector.dx);
 
-    return (
+    return EdgeGeometry(
       path: path,
       labelPosition: labelPos,
       arrowTip: endPoint,
       arrowDirection: direction,
+      isCurved: true,
     );
   }
 
@@ -162,6 +233,7 @@ class TransitionGeometry {
     required bool hasReciprocal,
     required Offset testPoint,
     double hitRadius = 14.0,
+    List<Offset>? obstacles,
   }) {
     if (isSelfLoop) {
       final geom = calculateSelfLoop(center: fromPos);
@@ -196,6 +268,7 @@ class TransitionGeometry {
         start: fromPos,
         end: toPos,
         hasReciprocal: hasReciprocal,
+        obstacles: obstacles,
       );
       // 1. Direct hit on badge area
       if ((testPoint - geom.labelPosition).distance <= 22.0) {
@@ -203,7 +276,7 @@ class TransitionGeometry {
       }
 
       // 2. Check straight line or curved quadratic Bézier
-      if (!hasReciprocal) {
+      if (!geom.isCurved) {
         final delta = toPos - fromPos;
         final distance = delta.distance;
         if (distance < 1.0) return false;
@@ -221,22 +294,9 @@ class TransitionGeometry {
         final proj = lineStart + ab * clampedT;
         return (testPoint - proj).distance <= hitRadius;
       } else {
-        final delta = toPos - fromPos;
-        final distance = delta.distance;
-        if (distance < 1.0) return false;
-        final unit = delta / distance;
-        final normal = Offset(-unit.dy, unit.dx);
-        const curveOffset = 36.0;
-        final midPoint = (fromPos + toPos) / 2;
-        final controlPoint = midPoint + normal * curveOffset;
-
-        final startToCtrl = controlPoint - fromPos;
-        final startUnit = startToCtrl / startToCtrl.distance;
-        final curveStart = fromPos + startUnit * nodeRadius;
-
-        final ctrlToEnd = toPos - controlPoint;
-        final endUnit = ctrlToEnd / ctrlToEnd.distance;
-        final curveEnd = toPos - endUnit * nodeRadius;
+        final curveStart = geom.curveStart!;
+        final controlPoint = geom.controlPoint!;
+        final curveEnd = geom.curveEnd!;
 
         for (double t = 0.0; t <= 1.0; t += 0.05) {
           final oneMinusT = 1.0 - t;

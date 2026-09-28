@@ -29,9 +29,11 @@ class CanvasPainter extends CustomPainter {
     required this.activeStateIds,
     required this.activeTransitionIds,
     this.isSimulationStuck = false,
+    this.pulsePhase = 0.0,
   });
 
   final bool isHoveringHandle;
+  final double pulsePhase;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -55,6 +57,8 @@ class CanvasPainter extends CustomPainter {
   }
 
   void _drawTransitions(Canvas canvas) {
+    final obstacles = automaton.states.values.map((s) => s.position).toList();
+
     for (final t in automaton.transitions) {
       final fromNode = automaton.states[t.fromId];
       final toNode = automaton.states[t.toId];
@@ -80,6 +84,16 @@ class CanvasPainter extends CustomPainter {
         strokeWidth = 2.0;
       }
 
+      final hasReciprocal = automaton.transitionsBetween(t.toId, t.fromId).isNotEmpty;
+      final geom = t.isSelfLoop
+          ? TransitionGeometry.calculateSelfLoop(center: fromNode.position)
+          : TransitionGeometry.calculateEdge(
+              start: fromNode.position,
+              end: toNode.position,
+              hasReciprocal: hasReciprocal,
+              obstacles: obstacles,
+            );
+
       // Outer glow for active or selected transition
       if (isActive || isSelected) {
         final glowColor = isActive
@@ -91,18 +105,7 @@ class CanvasPainter extends CustomPainter {
           ..strokeWidth = isSelected ? 8.0 : 9.0
           ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5.0);
 
-        if (t.isSelfLoop) {
-          final geom = TransitionGeometry.calculateSelfLoop(center: fromNode.position);
-          canvas.drawPath(geom.path, glowPaint);
-        } else {
-          final hasReciprocal = automaton.transitionsBetween(t.toId, t.fromId).isNotEmpty;
-          final geom = TransitionGeometry.calculateEdge(
-            start: fromNode.position,
-            end: toNode.position,
-            hasReciprocal: hasReciprocal,
-          );
-          canvas.drawPath(geom.path, glowPaint);
-        }
+        canvas.drawPath(geom.path, glowPaint);
       }
 
       final linePaint = Paint()
@@ -112,26 +115,55 @@ class CanvasPainter extends CustomPainter {
         ..strokeCap = StrokeCap.round;
 
       final arrowPaint = Paint()..color = baseColor;
-      final Offset labelPos;
+      canvas.drawPath(geom.path, linePaint);
+      TransitionGeometry.drawArrowHead(canvas, geom.arrowTip, geom.arrowDirection, arrowPaint);
 
-      if (t.isSelfLoop) {
-        final geom = TransitionGeometry.calculateSelfLoop(center: fromNode.position);
-        canvas.drawPath(geom.path, linePaint);
-        TransitionGeometry.drawArrowHead(canvas, geom.arrowTip, geom.arrowDirection, arrowPaint);
-        labelPos = geom.labelPosition;
-      } else {
-        final hasReciprocal = automaton.transitionsBetween(t.toId, t.fromId).isNotEmpty;
-        final geom = TransitionGeometry.calculateEdge(
-          start: fromNode.position,
-          end: toNode.position,
-          hasReciprocal: hasReciprocal,
+      // Animated energy pulse traveling along active transition
+      if (isActive) {
+        final pulseT = pulsePhase % 1.0;
+        final Offset pulsePos;
+        if (t.isSelfLoop) {
+          const startAngle = -3 * pi / 4;
+          const endAngle = -pi / 4;
+          const loopRadius = 32.0;
+          final p0 = fromNode.position + Offset(cos(startAngle), sin(startAngle)) * TransitionGeometry.nodeRadius;
+          final p3 = fromNode.position + Offset(cos(endAngle), sin(endAngle)) * TransitionGeometry.nodeRadius;
+          final p1 = fromNode.position + Offset(-loopRadius * 1.2, -TransitionGeometry.nodeRadius - loopRadius * 1.8);
+          final p2 = fromNode.position + Offset(loopRadius * 1.2, -TransitionGeometry.nodeRadius - loopRadius * 1.8);
+          final omt = 1.0 - pulseT;
+          pulsePos = p0 * (omt * omt * omt) +
+              p1 * (3.0 * omt * omt * pulseT) +
+              p2 * (3.0 * omt * pulseT * pulseT) +
+              p3 * (pulseT * pulseT * pulseT);
+        } else if (geom.isCurved) {
+          final omt = 1.0 - pulseT;
+          pulsePos = geom.curveStart! * (omt * omt) +
+              geom.controlPoint! * (2.0 * omt * pulseT) +
+              geom.curveEnd! * (pulseT * pulseT);
+        } else {
+          final delta = toNode.position - fromNode.position;
+          final dist = delta.distance;
+          final unit = dist > 0.001 ? delta / dist : const Offset(1, 0);
+          final lineStart = fromNode.position + unit * TransitionGeometry.nodeRadius;
+          final lineEnd = toNode.position - unit * TransitionGeometry.nodeRadius;
+          pulsePos = Offset.lerp(lineStart, lineEnd, pulseT)!;
+        }
+
+        canvas.drawCircle(
+          pulsePos,
+          5.0,
+          Paint()
+            ..color = const Color(0xFF00E5FF)
+            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4.0),
         );
-        canvas.drawPath(geom.path, linePaint);
-        TransitionGeometry.drawArrowHead(canvas, geom.arrowTip, geom.arrowDirection, arrowPaint);
-        labelPos = geom.labelPosition;
+        canvas.drawCircle(
+          pulsePos,
+          2.5,
+          Paint()..color = Colors.white,
+        );
       }
 
-      _drawSymbolBadge(canvas, labelPos, t.symbols.join(', '), isSelected, isActive, isHovered);
+      _drawSymbolBadge(canvas, geom.labelPosition, t.symbols.join(', '), isSelected, isActive, isHovered);
     }
   }
 
@@ -259,10 +291,11 @@ class CanvasPainter extends CustomPainter {
         final glowColor = isSimulationStuck
             ? const Color(0xFFFF5252) // Error Red
             : const Color(0xFF00E676); // Emerald Green
+        final pulseFactor = 0.85 + 0.25 * sin(pulsePhase * 2 * pi);
         final glowPaint = Paint()
-          ..color = glowColor.withValues(alpha: 0.4)
+          ..color = glowColor.withValues(alpha: isSimulationStuck ? 0.45 : 0.35 * pulseFactor)
           ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 14.0);
-        canvas.drawCircle(node.position, TransitionGeometry.nodeRadius + 9.0, glowPaint);
+        canvas.drawCircle(node.position, (TransitionGeometry.nodeRadius + 9.0) * pulseFactor, glowPaint);
       } else if (isSelected || isWireSource) {
         final selectGlow = Paint()
           ..color = const Color(0x4D6366F1)

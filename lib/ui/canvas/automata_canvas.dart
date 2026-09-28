@@ -1,3 +1,6 @@
+import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../core/models/state_node.dart';
@@ -15,7 +18,8 @@ class AutomataCanvas extends StatefulWidget {
   State<AutomataCanvas> createState() => _AutomataCanvasState();
 }
 
-class _AutomataCanvasState extends State<AutomataCanvas> {
+class _AutomataCanvasState extends State<AutomataCanvas>
+    with TickerProviderStateMixin {
   final TransformationController _transformController =
       TransformationController();
   final Size _canvasVirtualSize = const Size(3000, 2000);
@@ -31,16 +35,177 @@ class _AutomataCanvasState extends State<AutomataCanvas> {
   bool _wireDragMoved = false;
 
   int _lastCenterViewTrigger = -1;
+  int _lastZoomInTrigger = 0;
+  int _lastZoomOutTrigger = 0;
+  int _lastResetZoomTrigger = 0;
+
+  late final AnimationController _pulseAnimController;
+  late final AnimationController _layoutAnimController;
+  late final AnimationController _cameraAnimController;
+  Animation<Matrix4>? _cameraAnimation;
 
   @override
   void initState() {
     super.initState();
+    _pulseAnimController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2000),
+    );
+
+    _layoutAnimController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 550),
+    );
+
+    _cameraAnimController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 400),
+    );
+
+    widget.controller.onAnimateLayout = _startLayoutAnimation;
+    widget.controller.addListener(_onControllerChanged);
+    _transformController.addListener(_onTransformChanged);
+    _syncPulseAnimation();
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _centerViewOnGraph();
+      _centerViewOnGraph(animate: false);
     });
   }
 
-  void _centerViewOnGraph() {
+  void _syncPulseAnimation() {
+    if (kIsWeb ? false : Platform.environment.containsKey('FLUTTER_TEST')) {
+      return;
+    }
+    final hasActive = widget.controller.activeStateIds.isNotEmpty ||
+        widget.controller.activeTransitionIds.isNotEmpty ||
+        widget.controller.activeTransitionId != null;
+    if (hasActive && !_pulseAnimController.isAnimating) {
+      _pulseAnimController.repeat();
+    } else if (!hasActive && _pulseAnimController.isAnimating) {
+      _pulseAnimController.stop();
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.controller.removeListener(_onControllerChanged);
+    _transformController.removeListener(_onTransformChanged);
+    if (widget.controller.onAnimateLayout == _startLayoutAnimation) {
+      widget.controller.onAnimateLayout = null;
+    }
+    _pulseAnimController.dispose();
+    _layoutAnimController.dispose();
+    _cameraAnimController.dispose();
+    _transformController.dispose();
+    super.dispose();
+  }
+
+  void _onTransformChanged() {
+    final scale = _transformController.value.getMaxScaleOnAxis();
+    if ((widget.controller.zoomScale - scale).abs() > 0.01) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) widget.controller.updateZoomScale(scale);
+      });
+    }
+  }
+
+  void _onControllerChanged() {
+    _syncPulseAnimation();
+    if (widget.controller.centerViewTrigger != _lastCenterViewTrigger) {
+      _lastCenterViewTrigger = widget.controller.centerViewTrigger;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _smoothCenterViewOnGraph();
+      });
+    }
+    if (widget.controller.zoomInTrigger != _lastZoomInTrigger) {
+      _lastZoomInTrigger = widget.controller.zoomInTrigger;
+      _zoomBy(1.2);
+    }
+    if (widget.controller.zoomOutTrigger != _lastZoomOutTrigger) {
+      _lastZoomOutTrigger = widget.controller.zoomOutTrigger;
+      _zoomBy(0.8);
+    }
+    if (widget.controller.resetZoomTrigger != _lastResetZoomTrigger) {
+      _lastResetZoomTrigger = widget.controller.resetZoomTrigger;
+      _resetZoom();
+    }
+  }
+
+  void _startLayoutAnimation(
+      Map<String, Offset> targetPositions, VoidCallback onComplete) {
+    if (!mounted) {
+      onComplete();
+      return;
+    }
+    final startPositions = <String, Offset>{};
+    for (final entry in targetPositions.entries) {
+      final current = widget.controller.automaton.states[entry.key]?.position;
+      if (current != null) {
+        startPositions[entry.key] = current;
+      }
+    }
+
+    _layoutAnimController.reset();
+
+    void animListener() {
+      final t = Curves.easeInOutCubic.transform(_layoutAnimController.value);
+      for (final entry in targetPositions.entries) {
+        final start = startPositions[entry.key] ?? entry.value;
+        final currentPos = Offset.lerp(start, entry.value, t)!;
+        widget.controller.updateStatePositionDirect(entry.key, currentPos);
+      }
+    }
+
+    void statusListener(AnimationStatus status) {
+      if (status == AnimationStatus.completed) {
+        _layoutAnimController.removeListener(animListener);
+        _layoutAnimController.removeStatusListener(statusListener);
+        onComplete();
+        _smoothCenterViewOnGraph();
+      }
+    }
+
+    _layoutAnimController.addListener(animListener);
+    _layoutAnimController.addStatusListener(statusListener);
+    _layoutAnimController.forward();
+  }
+
+  void _centerViewOnGraph({bool animate = true}) {
+    if (animate) {
+      _smoothCenterViewOnGraph();
+    } else {
+      final renderBox = context.findRenderObject() as RenderBox?;
+      if (renderBox == null || !renderBox.hasSize) return;
+
+      final viewSize = renderBox.size;
+      final states = widget.controller.automaton.states.values;
+
+      if (states.isEmpty) {
+        final dx = -(1500.0 - viewSize.width / 2);
+        final dy = -(1000.0 - viewSize.height / 2);
+        _transformController.value = Matrix4.translationValues(dx, dy, 0.0);
+        return;
+      }
+
+      double minX = double.infinity, minY = double.infinity;
+      double maxX = -double.infinity, maxY = -double.infinity;
+
+      for (final s in states) {
+        if (s.position.dx < minX) minX = s.position.dx;
+        if (s.position.dy < minY) minY = s.position.dy;
+        if (s.position.dx > maxX) maxX = s.position.dx;
+        if (s.position.dy > maxY) maxY = s.position.dy;
+      }
+
+      final centerOfGraph = Offset((minX + maxX) / 2, (minY + maxY) / 2);
+      final dx = -(centerOfGraph.dx - viewSize.width / 2);
+      final dy = -(centerOfGraph.dy - viewSize.height / 2);
+
+      _transformController.value = Matrix4.translationValues(dx, dy, 0.0);
+    }
+  }
+
+  void _smoothCenterViewOnGraph() {
     final renderBox = context.findRenderObject() as RenderBox?;
     if (renderBox == null || !renderBox.hasSize) return;
 
@@ -50,7 +215,8 @@ class _AutomataCanvasState extends State<AutomataCanvas> {
     if (states.isEmpty) {
       final dx = -(1500.0 - viewSize.width / 2);
       final dy = -(1000.0 - viewSize.height / 2);
-      _transformController.value = Matrix4.translationValues(dx, dy, 0.0);
+      final target = Matrix4.translationValues(dx, dy, 0.0);
+      _animateMatrix(target);
       return;
     }
 
@@ -65,10 +231,88 @@ class _AutomataCanvasState extends State<AutomataCanvas> {
     }
 
     final centerOfGraph = Offset((minX + maxX) / 2, (minY + maxY) / 2);
-    final dx = -(centerOfGraph.dx - viewSize.width / 2);
-    final dy = -(centerOfGraph.dy - viewSize.height / 2);
+    final currentScale = _transformController.value.getMaxScaleOnAxis().clamp(0.2, 2.5);
+    final targetDx = -(centerOfGraph.dx * currentScale - viewSize.width / 2);
+    final targetDy = -(centerOfGraph.dy * currentScale - viewSize.height / 2);
 
-    _transformController.value = Matrix4.translationValues(dx, dy, 0.0);
+    final targetMatrix = Matrix4.identity()
+      ..translateByDouble(targetDx, targetDy, 0.0, 1.0)
+      ..scaleByDouble(currentScale, currentScale, 1.0, 1.0);
+
+    _animateMatrix(targetMatrix);
+  }
+
+  void _animateMatrix(Matrix4 targetMatrix) {
+    _cameraAnimController.reset();
+    _cameraAnimation = Matrix4Tween(
+      begin: _transformController.value,
+      end: targetMatrix,
+    ).animate(CurvedAnimation(
+      parent: _cameraAnimController,
+      curve: Curves.easeOutCubic,
+    ));
+
+    void camListener() {
+      if (_cameraAnimation != null) {
+        _transformController.value = _cameraAnimation!.value;
+      }
+    }
+
+    _cameraAnimController.addListener(camListener);
+    _cameraAnimController.forward().whenComplete(() {
+      _cameraAnimController.removeListener(camListener);
+    });
+  }
+
+  void _onPointerSignal(PointerSignalEvent event) {
+    if (event is PointerScrollEvent) {
+      final double zoomFactor = event.scrollDelta.dy < 0 ? 1.08 : 0.92;
+      _zoomAt(event.localPosition, zoomFactor);
+    }
+  }
+
+  void _zoomAt(Offset localFocalPoint, double zoomFactor) {
+    final sceneFocalPoint = _toScene(localFocalPoint);
+    final currentMatrix = _transformController.value;
+    final currentScale = currentMatrix.getMaxScaleOnAxis();
+    final targetScale = (currentScale * zoomFactor).clamp(0.2, 2.5);
+    final effectiveFactor = targetScale / currentScale;
+
+    if ((effectiveFactor - 1.0).abs() < 0.001) return;
+
+    final newMatrix = Matrix4.copy(currentMatrix)
+      ..translateByDouble(sceneFocalPoint.dx, sceneFocalPoint.dy, 0.0, 1.0)
+      ..scaleByDouble(effectiveFactor, effectiveFactor, 1.0, 1.0)
+      ..translateByDouble(-sceneFocalPoint.dx, -sceneFocalPoint.dy, 0.0, 1.0);
+
+    _transformController.value = newMatrix;
+    widget.controller.updateZoomScale(targetScale);
+  }
+
+  void _zoomBy(double zoomFactor) {
+    final renderBox = context.findRenderObject() as RenderBox?;
+    final center = renderBox != null && renderBox.hasSize
+        ? Offset(renderBox.size.width / 2, renderBox.size.height / 2)
+        : const Offset(400, 300);
+    _zoomAt(center, zoomFactor);
+  }
+
+  void _resetZoom() {
+    final renderBox = context.findRenderObject() as RenderBox?;
+    final center = renderBox != null && renderBox.hasSize
+        ? Offset(renderBox.size.width / 2, renderBox.size.height / 2)
+        : const Offset(400, 300);
+    final sceneCenter = _toScene(center);
+    final currentScale = _transformController.value.getMaxScaleOnAxis();
+    final effectiveFactor = 1.0 / currentScale;
+
+    final newMatrix = Matrix4.copy(_transformController.value)
+      ..translateByDouble(sceneCenter.dx, sceneCenter.dy, 0.0, 1.0)
+      ..scaleByDouble(effectiveFactor, effectiveFactor, 1.0, 1.0)
+      ..translateByDouble(-sceneCenter.dx, -sceneCenter.dy, 0.0, 1.0);
+
+    _transformController.value = newMatrix;
+    widget.controller.updateZoomScale(1.0);
   }
 
   Offset _toScene(Offset localPos) =>
@@ -88,6 +332,9 @@ class _AutomataCanvasState extends State<AutomataCanvas> {
     // Check in reverse order so topmost drawn transitions are hit first
     final transitions =
         widget.controller.automaton.transitions.toList().reversed;
+    final allNodePositions = widget.controller.automaton.states.values
+        .map((s) => s.position)
+        .toList();
     for (final t in transitions) {
       final fromNode = widget.controller.automaton.states[t.fromId];
       final toNode = widget.controller.automaton.states[t.toId];
@@ -102,6 +349,7 @@ class _AutomataCanvasState extends State<AutomataCanvas> {
         toPos: toNode.position,
         hasReciprocal: hasReciprocal,
         testPoint: scenePos,
+        obstacles: allNodePositions,
       )) {
         return t;
       }
@@ -117,6 +365,7 @@ class _AutomataCanvasState extends State<AutomataCanvas> {
 
   void _onPointerDown(PointerDownEvent event) {
     final scenePos = _toScene(event.localPosition);
+    final selected = widget.controller.selectedState;
 
     // 1. If currently in click-to-connect mode:
     if (_connectingSourceId != null) {
@@ -138,7 +387,6 @@ class _AutomataCanvasState extends State<AutomataCanvas> {
     }
 
     // 2. Check if clicking connection handle of selected state FIRST
-    final selected = widget.controller.selectedState;
     if (selected != null && _hitTestConnectionHandle(selected, scenePos)) {
       _isDraggingWire = true;
       _draggedNodeId = null;
@@ -264,6 +512,9 @@ class _AutomataCanvasState extends State<AutomataCanvas> {
         // Direct state creation on double click on empty canvas
         widget.controller.addStateAt(scenePos);
       }
+    } else {
+      // Direct quick-toggle accept on double-clicking a node
+      widget.controller.quickToggleAccept(clickedNode.id);
     }
   }
 
@@ -272,13 +523,6 @@ class _AutomataCanvasState extends State<AutomataCanvas> {
     return ListenableBuilder(
       listenable: widget.controller,
       builder: (context, _) {
-        if (widget.controller.centerViewTrigger != _lastCenterViewTrigger) {
-          _lastCenterViewTrigger = widget.controller.centerViewTrigger;
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            _centerViewOnGraph();
-          });
-        }
-
         final isStuck =
             widget.controller.simulator?.currentStep.isStuck ?? false;
         final selectedState = widget.controller.selectedState;
@@ -304,6 +548,7 @@ class _AutomataCanvasState extends State<AutomataCanvas> {
                 GestureDetector(
                   onDoubleTapDown: _onDoubleTapDown,
                   child: Listener(
+                    onPointerSignal: _onPointerSignal,
                     onPointerDown: _onPointerDown,
                     onPointerMove: _onPointerMove,
                     onPointerUp: _onPointerUp,
@@ -320,26 +565,32 @@ class _AutomataCanvasState extends State<AutomataCanvas> {
                       child: SizedBox(
                         width: _canvasVirtualSize.width,
                         height: _canvasVirtualSize.height,
-                        child: CustomPaint(
-                          painter: CanvasPainter(
-                            automaton: widget.controller.automaton,
-                            selectedStateId: widget.controller.selectedStateId,
-                            selectedTransitionId:
-                                widget.controller.selectedTransitionId,
-                            activeTransitionId:
-                                widget.controller.activeTransitionId,
-                            wireSourceStateId:
-                                widget.controller.wireSourceStateId,
-                            wireCurrentPosition:
-                                widget.controller.wireCurrentPosition,
-                            hoveredStateId: _hoveredNodeId,
-                            hoveredTransitionId: _hoveredTransitionId,
-                            isHoveringHandle: _isHoveringHandle,
-                            activeStateIds: widget.controller.activeStateIds,
-                            activeTransitionIds:
-                                widget.controller.activeTransitionIds,
-                            isSimulationStuck: isStuck,
-                          ),
+                        child: AnimatedBuilder(
+                          animation: _pulseAnimController,
+                          builder: (context, _) {
+                            return CustomPaint(
+                              painter: CanvasPainter(
+                                automaton: widget.controller.automaton,
+                                selectedStateId: widget.controller.selectedStateId,
+                                selectedTransitionId:
+                                    widget.controller.selectedTransitionId,
+                                activeTransitionId:
+                                    widget.controller.activeTransitionId,
+                                wireSourceStateId:
+                                    widget.controller.wireSourceStateId,
+                                wireCurrentPosition:
+                                    widget.controller.wireCurrentPosition,
+                                hoveredStateId: _hoveredNodeId,
+                                hoveredTransitionId: _hoveredTransitionId,
+                                isHoveringHandle: _isHoveringHandle,
+                                activeStateIds: widget.controller.activeStateIds,
+                                activeTransitionIds:
+                                    widget.controller.activeTransitionIds,
+                                isSimulationStuck: isStuck,
+                                pulsePhase: _pulseAnimController.value,
+                              ),
+                            );
+                          },
                         ),
                       ),
                     ),
@@ -493,40 +744,6 @@ class _AutomataCanvasState extends State<AutomataCanvas> {
                   ),
                 ),
               ),
-              const SizedBox(width: 4),
-
-              // Auto-Add Connected Node Button
-              InkWell(
-                onTap: () => widget.controller.autoAddConnectedNode(node.id),
-                borderRadius: BorderRadius.circular(12),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: Colors.transparent,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: const Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        Icons.add,
-                        size: 13,
-                        color: Color(0xFF67E8F9),
-                      ),
-                      SizedBox(width: 3),
-                      Text(
-                        '+ Node',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold,
-                          color: Color(0xFF67E8F9),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(width: 4),
               // Toggle Start
               InkWell(
                 onTap: () => widget.controller.quickToggleInitial(node.id),
@@ -636,10 +853,14 @@ class _AutomataCanvasState extends State<AutomataCanvas> {
       final hasReciprocal = widget.controller.automaton
           .transitionsBetween(t.toId, t.fromId)
           .isNotEmpty;
+      final allNodePositions = widget.controller.automaton.states.values
+          .map((s) => s.position)
+          .toList();
       final geom = TransitionGeometry.calculateEdge(
         start: fromNode.position,
         end: toNode.position,
         hasReciprocal: hasReciprocal,
+        obstacles: allNodePositions,
       );
       labelPos = geom.labelPosition;
     }
@@ -753,11 +974,5 @@ class _AutomataCanvasState extends State<AutomataCanvas> {
         ),
       ),
     );
-  }
-
-  @override
-  void dispose() {
-    _transformController.dispose();
-    super.dispose();
   }
 }

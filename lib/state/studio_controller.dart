@@ -71,9 +71,20 @@ class StudioController extends ChangeNotifier {
   bool _isPlaying = false;
   final Duration _playbackSpeed = const Duration(milliseconds: 650);
   int _centerViewTrigger = 0;
+  int _zoomInTrigger = 0;
+  int _zoomOutTrigger = 0;
+  int _resetZoomTrigger = 0;
+  double _zoomScale = 1.0;
 
-  // Undo stack
+  // Undo & Redo stacks
   final List<Automaton> _undoStack = [];
+  final List<Automaton> _redoStack = [];
+
+  bool get canUndo => _undoStack.isNotEmpty;
+  bool get canRedo => _redoStack.isNotEmpty;
+
+  /// Hook for UI components to intercept layout transitions and animate them smoothly.
+  void Function(Map<String, Offset> targetPositions, VoidCallback onComplete)? onAnimateLayout;
 
   StudioController({Automaton? initialAutomaton, String? machineName}) {
     if (initialAutomaton != null) {
@@ -118,8 +129,34 @@ class StudioController extends ChangeNotifier {
   bool get isPlaying => _isPlaying;
   Duration get playbackSpeed => _playbackSpeed;
   int get centerViewTrigger => _centerViewTrigger;
+  int get zoomInTrigger => _zoomInTrigger;
+  int get zoomOutTrigger => _zoomOutTrigger;
+  int get resetZoomTrigger => _resetZoomTrigger;
+  double get zoomScale => _zoomScale;
   SidebarTab get activeSidebarTab => _activeSidebarTab;
   bool get liveMode => _liveMode;
+
+  void triggerZoomIn() {
+    _zoomInTrigger++;
+    notifyListeners();
+  }
+
+  void triggerZoomOut() {
+    _zoomOutTrigger++;
+    notifyListeners();
+  }
+
+  void triggerResetZoom() {
+    _resetZoomTrigger++;
+    notifyListeners();
+  }
+
+  void updateZoomScale(double scale) {
+    if ((_zoomScale - scale).abs() > 0.005) {
+      _zoomScale = scale;
+      notifyListeners();
+    }
+  }
 
   void setSidebarTab(SidebarTab tab) {
     _activeSidebarTab = tab;
@@ -244,11 +281,29 @@ class StudioController extends ChangeNotifier {
     if (_undoStack.length > 30) {
       _undoStack.removeAt(0);
     }
+    _redoStack.clear();
   }
 
   void undo() {
     if (_undoStack.isNotEmpty) {
+      _redoStack.add(_automaton);
       _automaton = _undoStack.removeLast();
+      _selectedStateId = null;
+      _selectedTransitionId = null;
+      _wireSourceStateId = null;
+      _lastActiveTransitionId = null;
+      _isAwaitingCommaAppend = false;
+      _transitionTypingActive = false;
+      _initSimulator();
+      _syncGraphToRegexInternal();
+      notifyListeners();
+    }
+  }
+
+  void redo() {
+    if (_redoStack.isNotEmpty) {
+      _undoStack.add(_automaton);
+      _automaton = _redoStack.removeLast();
       _selectedStateId = null;
       _selectedTransitionId = null;
       _wireSourceStateId = null;
@@ -735,6 +790,30 @@ class StudioController extends ChangeNotifier {
     const layout = ForceDirectedLayout();
     final newPositions = layout.calculateLayout(_automaton, canvasSize: canvasSize);
 
+    if (onAnimateLayout != null) {
+      onAnimateLayout!(newPositions, () {
+        _setAllPositions(newPositions);
+      });
+    } else {
+      _setAllPositions(newPositions);
+    }
+  }
+
+  void applySugiyamaLayout({Size canvasSize = const Size(1200, 800)}) {
+    _recordHistory();
+    const layout = SugiyamaLayout();
+    final newPositions = layout.calculateLayout(_automaton, canvasSize: canvasSize);
+
+    if (onAnimateLayout != null) {
+      onAnimateLayout!(newPositions, () {
+        _setAllPositions(newPositions);
+      });
+    } else {
+      _setAllPositions(newPositions);
+    }
+  }
+
+  void _setAllPositions(Map<String, Offset> newPositions) {
     var updated = _automaton;
     for (final entry in newPositions.entries) {
       final state = updated.states[entry.key];
@@ -747,21 +826,12 @@ class StudioController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void applySugiyamaLayout({Size canvasSize = const Size(1200, 800)}) {
-    _recordHistory();
-    const layout = SugiyamaLayout();
-    final newPositions = layout.calculateLayout(_automaton, canvasSize: canvasSize);
-
-    var updated = _automaton;
-    for (final entry in newPositions.entries) {
-      final state = updated.states[entry.key];
-      if (state != null) {
-        updated = updated.setNode(state.copyWith(position: entry.value));
-      }
+  void updateStatePositionDirect(String stateId, Offset newPosition) {
+    final state = _automaton.states[stateId];
+    if (state != null) {
+      _automaton = _automaton.setNode(state.copyWith(position: newPosition));
+      notifyListeners();
     }
-    _automaton = updated;
-    _centerViewTrigger++;
-    notifyListeners();
   }
 
   void loadPreset(AutomataPreset preset) {

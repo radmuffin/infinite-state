@@ -39,10 +39,38 @@ class _StudioPageState extends State<StudioPage> {
         return;
       }
 
-      // Modifier key combinations (Ctrl/Meta/Alt) are reserved for system shortcuts
-      if (HardwareKeyboard.instance.isControlPressed ||
-          HardwareKeyboard.instance.isMetaPressed ||
-          HardwareKeyboard.instance.isAltPressed) {
+      final isCtrlOrMeta = HardwareKeyboard.instance.isControlPressed ||
+          HardwareKeyboard.instance.isMetaPressed;
+
+      if (isCtrlOrMeta) {
+        final isShift = HardwareKeyboard.instance.isShiftPressed;
+        if (event.logicalKey == LogicalKeyboardKey.keyZ) {
+          if (isShift) {
+            _controller.redo();
+          } else {
+            _controller.undo();
+          }
+          return;
+        } else if (event.logicalKey == LogicalKeyboardKey.keyY) {
+          _controller.redo();
+          return;
+        } else if (event.logicalKey == LogicalKeyboardKey.digit0 ||
+            event.logicalKey == LogicalKeyboardKey.numpad0) {
+          _controller.triggerResetZoom();
+          return;
+        } else if (event.logicalKey == LogicalKeyboardKey.equal ||
+            event.logicalKey == LogicalKeyboardKey.add) {
+          _controller.triggerZoomIn();
+          return;
+        } else if (event.logicalKey == LogicalKeyboardKey.minus ||
+            event.logicalKey == LogicalKeyboardKey.numpadSubtract) {
+          _controller.triggerZoomOut();
+          return;
+        }
+        return;
+      }
+
+      if (HardwareKeyboard.instance.isAltPressed) {
         return;
       }
 

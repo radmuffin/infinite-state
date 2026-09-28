@@ -55,12 +55,6 @@ class SugiyamaLayout implements LayoutAlgorithm {
             visited.add(targetId);
             layerMap[targetId] = currLayer + 1;
             queue.add(targetId);
-          } else {
-            // If already visited, we might push it to a deeper layer if reachable via longer chain
-            if (layerMap[targetId]! < currLayer + 1) {
-              // Keep layering forward-flowing
-              layerMap[targetId] = currLayer + 1;
-            }
           }
         }
       }

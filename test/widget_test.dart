@@ -339,16 +339,16 @@ void main() {
 
     // 1. Add a single node q0 at (400, 300)
     controller.addStateAt(const Offset(400, 300));
+    controller.triggerCenterView();
     await tester.pumpAndSettle();
 
     expect(controller.automaton.states.length, equals(1));
-    expect(controller.selectedStateId, equals('q0'));
+    // Verify streamlined quick action menu is visible for selected state without redundant '+ Node'
+    expect(find.text('Connect'), findsOneWidget);
+    expect(find.text('+ Node'), findsNothing);
 
-    // Verify + Node quick action pill button is visible for selected state
-    expect(find.text('+ Node'), findsOneWidget);
-
-    // 2. Hit the '+ Node' quick action button
-    await tester.tap(find.text('+ Node'));
+    // 2. Auto-add connected node q1 from q0
+    controller.autoAddConnectedNode('q0');
     await tester.pumpAndSettle();
 
     // Verify a new node was automatically created and connected
@@ -362,13 +362,12 @@ void main() {
     expect(transitions, isNotEmpty);
 
     // 3. Test hitting the plus connector handle on the canvas directly
-    // The newly selected node q1 has a handle at (q1.position + Offset(26 + 14, 0))
-    // Get transformation controller to convert scene pos to global
+    // The newly selected node q1 has a handle at (q1.position + Offset(30 + 14, 0))
     final interactiveViewerFinder = find.byType(InteractiveViewer);
     final iv = tester.widget<InteractiveViewer>(interactiveViewerFinder);
     final matrix = iv.transformationController!.value;
     final ivOrigin = tester.getTopLeft(interactiveViewerFinder);
-    final q1HandleScenePos = q1!.position + const Offset(40.0, 0.0);
+    final q1HandleScenePos = q1!.position + const Offset(44.0, 0.0);
     final q1HandleGlobalPos = ivOrigin + MatrixUtils.transformPoint(matrix, q1HandleScenePos);
 
     // Tap on the plus handle
@@ -385,9 +384,9 @@ void main() {
     expect(controller.automaton.transitionsBetween('q1', 'q2'), isNotEmpty);
 
     // 4. Test dragging from the plus handle into empty canvas space
-    final q2HandleScenePos = q2!.position + const Offset(40.0, 0.0);
+    final q2HandleScenePos = q2!.position + const Offset(44.0, 0.0);
     final q2HandleGlobalPos = ivOrigin + MatrixUtils.transformPoint(matrix, q2HandleScenePos);
-    final dragDropGlobalPos = q2HandleGlobalPos + const Offset(120.0, 100.0);
+    final dragDropGlobalPos = q2HandleGlobalPos + const Offset(-40.0, 100.0);
 
     final dragGesture = await tester.startGesture(q2HandleGlobalPos);
     await tester.pump(const Duration(milliseconds: 50));
@@ -404,7 +403,7 @@ void main() {
     expect(controller.automaton.transitionsBetween('q2', 'q3'), isNotEmpty);
 
     // 5. Test dragging from the plus handle to an EXISTING node (q3 -> q0)
-    final q3HandleScenePos = q3!.position + const Offset(40.0, 0.0);
+    final q3HandleScenePos = q3!.position + const Offset(44.0, 0.0);
     final q3HandleGlobalPos = ivOrigin + MatrixUtils.transformPoint(matrix, q3HandleScenePos);
     final q0GlobalPos = ivOrigin + MatrixUtils.transformPoint(matrix, controller.automaton.states['q0']!.position);
 
@@ -441,8 +440,8 @@ void main() {
     controller.addStateAt(const Offset(400, 300));
     await tester.pumpAndSettle();
 
-    // 2. Click '+ Node' to add a connector and auto-add node q1
-    await tester.tap(find.text('+ Node'));
+    // 2. Add connected node q1 from q0
+    controller.autoAddConnectedNode('q0');
     await tester.pumpAndSettle();
 
     final initialTransition = controller.automaton.transitionsBetween('q0', 'q1').first;

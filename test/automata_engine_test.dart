@@ -1,3 +1,4 @@
+import 'dart:ui';
 import 'package:infinite_state/core/engine/automata_simulator.dart';
 import 'package:infinite_state/core/layout/force_directed_layout.dart';
 import 'package:infinite_state/core/layout/sugiyama_layout.dart';
@@ -393,6 +394,136 @@ void main() {
       controller.typeTransitionSymbol('0, 1');
       t = controller.automaton.transitions.first;
       expect(t.symbols, equals({'0', '1'}));
+
+      controller.dispose();
+    });
+
+    test('SugiyamaLayout preserves initial state at layer 0 in cyclic graphs', () {
+      final automaton = ExampleAutomata.binaryDivisibleBy3.automaton;
+      final layout = const SugiyamaLayout().calculateLayout(automaton, canvasSize: const Size(1200, 800));
+
+      final initialState = automaton.initialState!;
+      final s0Pos = layout[initialState.id]!;
+
+      // All other states should be to the right of or on subsequent layers of initial state
+      for (final state in automaton.states.values) {
+        if (state.id != initialState.id) {
+          final pos = layout[state.id]!;
+          expect(pos.dx, greaterThanOrEqualTo(s0Pos.dx),
+              reason: 'Initial state ${initialState.id} should be on the leftmost layer');
+        }
+      }
+    });
+
+    test('TransitionGeometry obstacle avoidance curves around intermediate states', () {
+      // Straight line from (100, 300) to (500, 300), with an intermediate node at (300, 300)
+      const start = Offset(100, 300);
+      const end = Offset(500, 300);
+      const obstacle = Offset(300, 300);
+
+      // Without obstacle: straight line
+      final straightGeom = TransitionGeometry.calculateEdge(
+        start: start,
+        end: end,
+        hasReciprocal: false,
+        obstacles: [],
+      );
+      expect(straightGeom.isCurved, isFalse);
+
+      // With obstacle in the middle: curves away to clear obstacle
+      final curvedGeom = TransitionGeometry.calculateEdge(
+        start: start,
+        end: end,
+        hasReciprocal: false,
+        obstacles: [obstacle],
+      );
+      expect(curvedGeom.isCurved, isTrue);
+      expect(curvedGeom.controlPoint, isNotNull);
+      // Control point should be displaced vertically away from line y = 300 by >= 55px
+      expect((curvedGeom.controlPoint!.dy - 300).abs(), greaterThanOrEqualTo(55.0));
+
+      // Back-edge from right to left (end.dx < start.dx - 15) curves gracefully
+      final backEdgeGeom = TransitionGeometry.calculateEdge(
+        start: const Offset(500, 300),
+        end: const Offset(100, 300),
+        hasReciprocal: false,
+      );
+      expect(backEdgeGeom.isCurved, isTrue);
+      // Arcs underneath (positive dy displacement)
+      expect(backEdgeGeom.controlPoint!.dy, greaterThan(300.0));
+    });
+
+    test('StudioController dual-stack Undo and Redo correctly reverts and reapplies actions', () {
+      final controller = StudioController();
+      expect(controller.canUndo, isFalse);
+      expect(controller.canRedo, isFalse);
+
+      controller.clearAutomaton();
+      expect(controller.canUndo, isTrue);
+      controller.undo();
+      expect(controller.automaton.states, isNotEmpty);
+      expect(controller.canRedo, isTrue);
+      controller.redo();
+      expect(controller.automaton.states, isEmpty);
+
+      // 1. Add state q0
+      controller.addStateAt(const Offset(100, 100));
+      expect(controller.automaton.states.length, equals(1));
+      expect(controller.canUndo, isTrue);
+      expect(controller.canRedo, isFalse);
+
+      // 2. Add state q1
+      controller.addStateAt(const Offset(300, 100));
+      expect(controller.automaton.states.length, equals(2));
+
+      // 3. Connect q0 -> q1
+      controller.connectStates('q0', 'q1');
+      expect(controller.automaton.transitions.length, equals(1));
+
+      // 4. Undo: reverts connect
+      controller.undo();
+      expect(controller.automaton.transitions.length, equals(0));
+      expect(controller.automaton.states.length, equals(2));
+      expect(controller.canUndo, isTrue);
+      expect(controller.canRedo, isTrue);
+
+      // 5. Redo: restores connect
+      controller.redo();
+      expect(controller.automaton.transitions.length, equals(1));
+      expect(controller.canRedo, isFalse);
+
+      // 6. Undo twice: reverts connect, then reverts q1
+      controller.undo();
+      controller.undo();
+      expect(controller.automaton.states.length, equals(1));
+      expect(controller.canRedo, isTrue);
+
+      // 7. Performing a new action clears redo stack
+      controller.addStateAt(const Offset(500, 200));
+      expect(controller.automaton.states.length, equals(2));
+      expect(controller.canRedo, isFalse);
+
+      controller.dispose();
+    });
+
+    test('StudioController zoom scale and zoom triggers update correctly', () {
+      final controller = StudioController();
+      expect(controller.zoomScale, equals(1.0));
+
+      controller.updateZoomScale(1.5);
+      expect(controller.zoomScale, equals(1.5));
+
+      final initialIn = controller.zoomInTrigger;
+      controller.triggerZoomIn();
+      expect(controller.zoomInTrigger, equals(initialIn + 1));
+
+      final initialOut = controller.zoomOutTrigger;
+      controller.triggerZoomOut();
+      expect(controller.zoomOutTrigger, equals(initialOut + 1));
+
+      final initialReset = controller.resetZoomTrigger;
+      controller.triggerResetZoom();
+      expect(controller.resetZoomTrigger, equals(initialReset + 1));
 
       controller.dispose();
     });
