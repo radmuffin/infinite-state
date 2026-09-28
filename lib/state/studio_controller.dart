@@ -8,6 +8,8 @@ import '../core/models/automaton.dart';
 import '../core/models/state_node.dart';
 import '../core/models/transition.dart';
 import '../core/presets/example_automata.dart';
+import '../core/regex/regex_parser.dart';
+import '../core/regex/regex_service.dart';
 import '../core/storage/machine_storage.dart';
 
 class BatchTestResult {
@@ -28,6 +30,13 @@ class StudioController extends ChangeNotifier {
   String? _currentMachineId;
   Automaton _automaton = ExampleAutomata.binaryDivisibleBy3.automaton;
   String _inputTape = ExampleAutomata.binaryDivisibleBy3.defaultInput;
+
+  // Regex Synchronization State
+  String _regexPattern = '';
+  bool _regexAutoSync = true;
+  String? _regexError;
+  bool _isGraphOutOfSyncWithRegex = false;
+  bool _isSyncing = false;
 
   // Explicit alphabet symbols added by user (in addition to transitions)
   final Set<String> _explicitAlphabet = {'0', '1'};
@@ -57,6 +66,7 @@ class StudioController extends ChangeNotifier {
       _machineName = machineName;
     }
     _initSimulator();
+    _syncGraphToRegexInternal();
   }
 
   // --- Getters ---
@@ -72,6 +82,12 @@ class StudioController extends ChangeNotifier {
   bool get isPlaying => _isPlaying;
   Duration get playbackSpeed => _playbackSpeed;
   int get centerViewTrigger => _centerViewTrigger;
+
+  // --- Regex Synchronization Getters ---
+  String get regexPattern => _regexPattern;
+  bool get regexAutoSync => _regexAutoSync;
+  String? get regexError => _regexError;
+  bool get isGraphOutOfSyncWithRegex => _isGraphOutOfSyncWithRegex;
 
   /// Combined alphabet from transitions plus any explicitly added symbols.
   Set<String> get fullAlphabet {
@@ -136,6 +152,7 @@ class StudioController extends ChangeNotifier {
     _wireSourceStateId = null;
     _centerViewTrigger++;
     _initSimulator();
+    _syncGraphToRegexInternal();
     notifyListeners();
   }
 
@@ -165,6 +182,7 @@ class StudioController extends ChangeNotifier {
       _selectedTransitionId = null;
       _wireSourceStateId = null;
       _initSimulator();
+      _syncGraphToRegexInternal();
       notifyListeners();
     }
   }
@@ -511,20 +529,110 @@ class StudioController extends ChangeNotifier {
     notifyListeners();
   }
 
+  // --- Bi-Directional Regex Synchronization ---
+
+  /// Updates the regex pattern. If [syncToGraph] is true or [regexAutoSync] is active,
+  /// compiles the regex to automaton and updates the canvas graph.
+  void setRegexPattern(String pattern, {bool syncToGraph = false}) {
+    _regexPattern = pattern;
+    if (syncToGraph || _regexAutoSync) {
+      syncRegexToGraph();
+    } else {
+      _isGraphOutOfSyncWithRegex = true;
+      notifyListeners();
+    }
+  }
+
+  /// Compiles current [_regexPattern] to an [Automaton] via Thompson's Construction
+  /// and updates the canvas state with hierarchical auto-layout.
+  void syncRegexToGraph() {
+    _isSyncing = true;
+    try {
+      final newAutomaton = RegexService.regexToAutomaton(
+        _regexPattern,
+        applyLayout: true,
+      );
+      _recordHistory();
+      _automaton = newAutomaton;
+      _explicitAlphabet.addAll(newAutomaton.alphabet);
+      _selectedStateId = null;
+      _selectedTransitionId = null;
+      _wireSourceStateId = null;
+      _centerViewTrigger++;
+      _initSimulator(syncRegex: false);
+      _regexError = null;
+      _isGraphOutOfSyncWithRegex = false;
+    } on RegexParseException catch (e) {
+      _regexError = e.message;
+    } catch (e) {
+      _regexError = e.toString();
+    } finally {
+      _isSyncing = false;
+      notifyListeners();
+    }
+  }
+
+  /// Extracts the regular expression from the current [Automaton] via State Elimination
+  /// and updates [_regexPattern].
+  void syncGraphToRegex() {
+    _isSyncing = true;
+    try {
+      _regexPattern = RegexService.automatonToRegex(_automaton);
+      _regexError = null;
+      _isGraphOutOfSyncWithRegex = false;
+    } catch (e) {
+      _regexError = e.toString();
+    } finally {
+      _isSyncing = false;
+      notifyListeners();
+    }
+  }
+
+  /// Toggles live bidirectional auto-sync between regex and graph.
+  void toggleRegexAutoSync([bool? enabled]) {
+    _regexAutoSync = enabled ?? !_regexAutoSync;
+    if (_regexAutoSync && _isGraphOutOfSyncWithRegex) {
+      syncGraphToRegex();
+    } else {
+      notifyListeners();
+    }
+  }
+
+  void _syncGraphToRegexInternal() {
+    if (_isSyncing) return;
+    if (_regexAutoSync) {
+      _isSyncing = true;
+      try {
+        _regexPattern = RegexService.automatonToRegex(_automaton);
+        _regexError = null;
+        _isGraphOutOfSyncWithRegex = false;
+      } catch (e) {
+        _regexError = e.toString();
+      } finally {
+        _isSyncing = false;
+      }
+    } else {
+      _isGraphOutOfSyncWithRegex = true;
+    }
+  }
+
   // --- Simulation Management ---
 
   void setInputTape(String tape) {
     _inputTape = tape;
-    _initSimulator();
+    _initSimulator(syncRegex: false);
     notifyListeners();
   }
 
-  void _initSimulator() {
+  void _initSimulator({bool syncRegex = true}) {
     stopPlayback();
     _simulator = AutomataSimulator.run(
       automaton: _automaton,
       inputTape: _inputTape,
     );
+    if (syncRegex) {
+      _syncGraphToRegexInternal();
+    }
   }
 
   void stepForward() {
